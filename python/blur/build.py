@@ -20,6 +20,12 @@ try:
     import subprocess
 except:
     import popen2
+	
+class BlurException(Exception):
+    def __init__(self, value):
+        self.value = value
+    def __str__(self):
+        return repr(self.value)
 
 class TerminalControllerDummy:
     def render(self,text):
@@ -222,7 +228,7 @@ class Target:
                 try:
                     d = find_target(d)
                 except:
-                    raise ("Target.build_deps: couldn't find dependancy: %s for target: %s" % (d, self.name))
+                    raise BlurException("Target.build_deps: couldn't find dependancy: %s for target: %s" % (d, self.name))
             if isinstance(d,Target):
                 d.build()
     
