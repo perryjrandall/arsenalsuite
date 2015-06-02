@@ -53,10 +53,10 @@ contains( DEFINED, versioned ) {
 }
 
 unix {
-	target.path=/usr/local/lib
+	target.path=$$(DESTDIR)/usr/local/lib
 }
 win32 {
-	target.path=c:/blur/common/
+	target.path=$$(DESTDIR)/blur/common/
 }
 
 INSTALLS += target
