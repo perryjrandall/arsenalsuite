@@ -81,7 +81,7 @@ Release:win32 {
 	LIBS+=-L../../lib/classesui/sipClassesui -lpyClassesui
 	LIBS+=-L../../lib/stone/sipStone -lpyStone
 	LIBS+=-L../../lib/stonegui/sipStonegui -lpyStonegui
-	LIBS+=-L../../lib/absubmit/sipAbsubmit -lpyAbsubmit
+	LIBS+=-L../../lib/absubmit/sipAbsubmit -lAbsubmit
 	LIBS+=-L../../lib/sip/siplib -lsip
 }
 
@@ -91,7 +91,7 @@ Debug:win32 {
 	LIBS+=-L../../lib/classesui/sipClassesui -lpyClassesui_d
 	LIBS+=-L../../lib/stone/sipStone -lpyStone_d
 	LIBS+=-L../../lib/stonegui/sipStonegui -lpyStonegui_d
-	LIBS+=-L../../lib/absubmit/sipAbsubmit -lpyAbsubmit_d
+	LIBS+=-L../../lib/absubmit/sipAbsubmit -lAbsubmit_d
 	LIBS+=-L../../lib/sip/siplib -lsip_d
 }
 
