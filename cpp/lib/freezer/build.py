@@ -9,9 +9,10 @@ svn = WCRevTarget("libfreezersvnrev",path,rev_path,"include/svnrev-template.h","
 
 # Python module target
 pc = SipTarget("pyfreezer",path)
-pc.pre_deps = ["libfreezer","pyclasses:install"]
+pc.pre_deps = ["libfreezer","pyclasses:install","pyabsubmit"]
 
 pcs = SipTarget("pyfreezerstatic",path,True)
+pcs.pre_deps = ["libfreezer","pyclasses:install","pyabsubmit"]
 
 QMakeTarget("libfreezer",path,"libfreezer.pro",["classes","classesui",svn])
 #QMakeTarget("libassfreezerstatic",path,"libassfreezer.pro",["stonestatic","stoneguistatic","classesuistatic","libabsubmit"],[],True)
