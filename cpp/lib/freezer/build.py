@@ -12,7 +12,7 @@ pc = SipTarget("pyfreezer",path)
 pc.pre_deps = ["libfreezer","pyclasses:install","pyabsubmit"]
 
 pcs = SipTarget("pyfreezerstatic",path,True)
-pcs.pre_deps = ["libfreezer","pyclasses:install","pyabsubmit"]
+pcs.pre_deps = ["libfreezer","pyclassesstatic:install","pyabsubmitstatic"]
 
 QMakeTarget("libfreezer",path,"libfreezer.pro",["classes","classesui",svn])
 #QMakeTarget("libassfreezerstatic",path,"libassfreezer.pro",["stonestatic","stoneguistatic","classesuistatic","libabsubmit"],[],True)
