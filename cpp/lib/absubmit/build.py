@@ -17,5 +17,8 @@ if sys.platform=="linux2":
 pc = SipTarget("pyabsubmit",path)
 pc.pre_deps = ["libabsubmit","pyclasses:install"]
 
+pcs = SipTarget("pyabsubmitstatic",path,True)
+pcs.pre_deps = ["libabsubmit", "pyclasses:install"]
+
 if __name__ == "__main__":
 	build()
