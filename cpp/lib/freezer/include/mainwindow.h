@@ -136,7 +136,7 @@ protected slots:
 
 	void hostViewActionToggled(bool);
 	void jobViewActionToggled(bool);
-private:
+protected:
 	virtual bool eventFilter( QObject *, QEvent * );
 	virtual void keyPressEvent( QKeyEvent * event );
 
