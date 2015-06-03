@@ -37,7 +37,6 @@ InstallDir "C:\\arsenalsuite\\freezer\\"
 !insertmacro MUI_PAGE_INSTFILES ; File installation page
 
 Section "install"
-	Processes::KillProcess "af.exe"
 	# nuke old freezer installs, if any
 	RMDir /r "C:\freezer\*.*"
 	RMDIR /r "C:\freezer"
