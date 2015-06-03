@@ -8,6 +8,7 @@ import traceback
 import cPickle
 import ConfigParser
 import exceptions
+import psutil
 from defaultdict import *
 
 All_Targets = []
@@ -480,6 +481,26 @@ class NSISTarget(Target):
                 print term.render("${YELLOW}Installing${NORMAL}"), outputFile
             self.run_cmd( [outputFile,'/S'] )
 
+class KillTarget(Target):
+    def __init__(self, name, path, applications):
+        Target.__init__(self,name, path)
+        self.name = name
+        self.apps = applications
+    def is_buildable(self):
+        return True
+    def build_run(self):
+        for proc in psutil.process_iter():
+            try:
+                if proc.name() in self.apps:
+                    print "Terminating process (%s)" % (proc.name())
+                    try:
+                        proc.kill()
+                    except AccessDenied, ad:
+                        print "Unable to kill the process"
+            except:
+                # We can't read process names of system owned procs, so we ignore these errors
+                pass
+			
 # Finds the subwcrev.exe program
 # Part of toroisesvn used to get revision info for a file/dir
 def find_wcrev():
