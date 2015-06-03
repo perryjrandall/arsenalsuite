@@ -24,16 +24,19 @@ elif sys.platform=="win32":
     instPrefix = destDir + "arsenalsuite/burner/"
    
 ini = IniConfigTarget("burnerini",path,'burner.ini.template','burner.ini',instPrefix)
+kt = KillTarget("burnerkill", path, ["abpsmon.exe","burner.exe"])
 nsi = NSISTarget("burnerinstaller",path,"burner.nsi")
-st = SipTarget("pyburner",path,True)
+nsi.pre_deps = ['burnerkill']
+st = SipTarget("pyburner",path)
+sst = SipTarget("pyburnerstatic",path,True)
 #abgui = QMakeTarget("abgui","apps/assburner", "abgui.pro", ["stonegui","classes",svn])
 
 # Use Static python modules on windows
 deps = None
 if sys.platform == 'win32':
-	deps = ["sipstatic","pystonestatic","pyclassesstatic","classes",st,ini]
+	deps = ["sipstatic","pystonestatic","pyclassesstatic","classes","pyburnerstatic",ini]
 else:
-	deps = ["sipstatic","pystone","pyclasses","classes",st,ini]
+	deps = ["sipstatic","pystone","pyclasses","classes","pyburner",ini]
 
 assburner = QMakeTarget("burner",path, "burner.pro", deps)
 abpsmon = QMakeTarget("abpsmon",os.path.join(path,'psmon'), "psmon.pro", ["stonegui","classes",ini])

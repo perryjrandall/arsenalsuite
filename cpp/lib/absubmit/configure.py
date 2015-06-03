@@ -48,12 +48,12 @@ def doit():
 	qt_sip_flags = config.pyqt_sip_flags
 	if opt_generate_code:
 		if sys.platform=="win32":
-			sip_bin = "..\\sip\\sipgen\\sip.exe"
+				sip_bin = "..\\sip\\sipgen\\sip.exe"
 		else:
-			sip_bin = config.sip_bin
+				sip_bin = config.sip_bin
 		if not os.path.exists("sipAbsubmit"):
-			os.mkdir("sipAbsubmit")
-		ret = os.system(" ".join([sip_bin, "-c", "sipAbsubmit", "-b", "sipAbsubmit/" + build_file, "-I", config.pyqt_sip_dir, "-I", config.default_sip_dir, "-I", config.sip_mod_dir, config.pyqt_sip_flags, "sip/absubmit.sip"]))
+				os.mkdir("sipAbsubmit")
+		ret = os.system(" ".join([sip_bin, "-k", "-c", "sipAbsubmit", "-b", "sipAbsubmit/" + build_file, "-I", config.pyqt_sip_dir, "-I", config.default_sip_dir, "-I", config.sip_mod_dir, config.pyqt_sip_flags, "sip/absubmit.sip"]))
 		if ret:
 			sys.exit(ret%255)
 	
@@ -65,8 +65,8 @@ def doit():
 		build_file=build_file,
 		static=opt_static,
 		debug=opt_debug,
-        # Use the sip mod dir to adhere to the DESTDIR env var
-        install_dir=os.path.join(config.sip_mod_dir,"blur"),
+		# Use the sip mod dir to adhere to the DESTDIR env var
+		install_dir=os.path.join(config.sip_mod_dir,"blur"),
 #		install_dir=os.path.join(config.default_mod_dir,"blur"),
 		dir="sipAbsubmit"
 	)
@@ -79,8 +79,8 @@ def doit():
 
 	installs.append([sipfiles, os.path.join(config.default_sip_dir, "blur")])
 
-    # Use the sip mod dir to adhere to the DESTDIR env var
-    #installs.append(["absubmitconfig.py", config.sip_mod_dir])
+	# Use the sip mod dir to adhere to the DESTDIR env var
+	#installs.append(["absubmitconfig.py", config.sip_mod_dir])
 	#installs.append(["absubmitconfig.py", config.default_mod_dir])
 
 	sipconfig.ParentMakefile(
@@ -93,7 +93,7 @@ def doit():
 	# specific prefixes or extensions (e.g. the "lib" prefix on UNIX, or the
 	# ".dll" extension on Windows).
 	if sys.platform == "win32":
-		makefile.extra_libs = ["absubmit","classes","stone","QtSql4","QtXml4","QtNetwork4","absubmit","Mpr"]
+		makefile.extra_libs = ["absubmit","classes","stone","QtSql4","QtXml4","QtNetwork4","Mpr"]
 	elif sys.platform == "darwin":
 		makefile.extra_libs = ["absubmit","classes","stone","absubmit"]
 	else:
