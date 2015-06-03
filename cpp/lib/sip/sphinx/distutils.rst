@@ -3,6 +3,11 @@
 Building Your Extension with distutils
 ======================================
 
+.. note::
+
+    This should not be used for new projects as it will not be supported by SIP
+    v5.
+
 To build the example in :ref:`ref-simple-c++-example` using distutils, it is
 sufficient to create a standard ``setup.py``, listing ``word.sip`` among the
 files to build, and hook-up SIP into distutils::
@@ -39,3 +44,6 @@ file in the supported system or local paths (eg: in the same directory of
      sip-opts = -e -g
 
 and then run ``setup.py build`` as usual.
+
+If ``sip-opts`` has not been specified then any ``swig_opts`` defined when
+creating the ``Extension`` will be used.

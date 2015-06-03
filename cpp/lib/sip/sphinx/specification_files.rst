@@ -99,7 +99,8 @@ file.
     *class* ::= **class** *name* [**:** *super-classes*] [*class-annotations*]
             **{** {*class-line*} **};**
 
-    *super-classes* ::= *name* [**,** *super-classes*]
+    *super-classes* ::= [**public** | **protected** | **private**] *name*
+            [**,** *super-classes*]
 
     *class-line* ::= [
             *class-statement* |
@@ -114,6 +115,7 @@ file.
             :directive:`%Docstring` |
             :directive:`%GCClearCode` |
             :directive:`%GCTraverseCode` |
+            :directive:`%InstanceCode` |
             :directive:`%PickleCode` |
             :directive:`%TypeCode` |
             :directive:`%TypeHeaderCode` |
@@ -162,6 +164,7 @@ file.
             **(** [*argument-list*] **)** [**const**] [*exceptions*] [**= 0**]
             [*function-annotations*] [*c++-signature*] **;**
             [:directive:`%MethodCode`] [:directive:`%VirtualCatcherCode`]
+            [:directive:`VirtualCallCode`]
 
     *special-method* ::= *type* *special-method-name*
             **(** [*argument-list*] **)** [*function-annotations*] **;**
@@ -190,7 +193,7 @@ file.
     *virtual-operator* ::= **virtual** *operator-type*
             **(** [*argument-list*] **)** [**const**] [*exceptions*] [**= 0**]
             [*function-annotations*] **;** [:directive:`%MethodCode`]
-            [:directive:`%VirtualCatcherCode`]
+            [:directive:`%VirtualCatcherCode`] [:directive:`VirtualCallCode`]
 
     *operatator-type* ::= [ *operator-function* | *operator-cast* ]
 
@@ -306,7 +309,7 @@ file.
 
     *character-value* ::= **'** *character* **'**
 
-    *unary-operator* ::= [**!** | **~** | **-** | **+**]
+    *unary-operator* ::= [**!** | **~** | **-** | **+** | **\*** | **&**]
 
     *binary-operator* ::= [**-** | **+** | ***** | **/** | **&** | **|**]
 
@@ -336,6 +339,7 @@ file.
             **bool** |
             **void** |
             **PyObject** |
+            :stype:`SIP_PYBUFFER` |
             :stype:`SIP_PYCALLABLE` |
             :stype:`SIP_PYDICT` |
             :stype:`SIP_PYLIST` |
@@ -386,6 +390,11 @@ This is both a ``const char *`` and a ``PyObject *`` that is used as the type
 of the member instead of ``const char *`` in functions that implement the
 connection or disconnection of an explicitly generated signal to a slot.
 Handwritten code must be provided to interpret the conversion correctly.
+
+
+.. sip-type:: SIP_PYBUFFER
+
+This is a ``PyObject *`` that implements the Python buffer protocol.
 
 
 .. sip-type:: SIP_PYCALLABLE

@@ -37,12 +37,23 @@ The full set of command line options is:
     to generate a platform and compiler specific Makefile for the module.  By
     default the file is not generated.
 
+.. cmdoption:: -B <TAG>
+
+    .. versionadded:: 4.16
+
+    The tag is added to the list of *backstops*.  The option may be given more
+    than once if multiple timelines have been defined.  See the
+    :directive:`%Timeline` directive for more details.
+
 .. cmdoption:: -c <DIR>
 
     The name of the directory (which must exist) into which all of the
     generated C or C++ code is placed.  By default no code is generated.
 
 .. cmdoption:: -d <FILE>
+
+    .. deprecated:: 4.12
+        Use the :option:`-X <sip -X>` option instead.
 
     The name of the documentation file to generate.  Documentation is included
     in specification files using the :directive:`%Doc` and
@@ -65,8 +76,8 @@ The full set of command line options is:
 
     The directory is added to the list of directories searched when looking for
     a specification file given in an :directive:`%Include` or
-    :directive:`%Import` directive.  This option may be given any number of
-    times.
+    :directive:`%Import` directive.  Directory separators must always be ``/``.
+    This option may be given any number of times.
 
 .. cmdoption:: -j <NUMBER>
 
@@ -78,6 +89,10 @@ The full set of command line options is:
 .. cmdoption:: -k
 
     .. versionadded:: 4.10
+
+    .. deprecated:: 4.12
+        Use the ``keyword_arguments="All"`` :directive:`%Module` directive
+        argument instead.
 
     All functions and methods will, by default, support passing parameters
     using the Python keyword argument syntax.
@@ -122,6 +137,16 @@ The full set of command line options is:
     to generate code for.  This option may be given any number of times so long
     as the tags do not conflict.
 
+.. cmdoption:: -T
+
+    .. deprecated:: 4.16.6
+        This option is now ignored and timestamps are always disabled.
+
+    By default the generated C and C++ source and header files include a
+    timestamp specifying when they were generated.  This option disables the
+    timestamp so that the contents of the generated files remain constant for a
+    particular version of SIP.
+
 .. cmdoption:: -w
 
     The display of warning messages is enabled.  By default warning messages
@@ -132,6 +157,19 @@ The full set of command line options is:
     The feature (declared using the :directive:`%Feature` directive) is
     disabled.
 
+.. cmdoption:: -X <ID:FILE>
+
+    .. versionadded:: 4.12
+
+    The extract (defined with the :directive:`%Extract` directive) with the
+    identifier ``ID`` is written to the file ``FILE``.
+
 .. cmdoption:: -z <FILE>
 
+    .. deprecated:: 4.16.6
+        Use the ``@<FILE>`` style instead.
+
     The name of a file containing more command line options.
+
+Command line options can also be placed in a file and passed on the command
+line using the ``@`` prefix.

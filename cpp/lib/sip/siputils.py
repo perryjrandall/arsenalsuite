@@ -2,7 +2,7 @@
 # extension modules created with SIP.  It provides information about file
 # locations, version numbers etc., and provides some classes and functions.
 #
-# Copyright (c) 2011 Riverbank Computing Limited <info@riverbankcomputing.com>
+# Copyright (c) 2015 Riverbank Computing Limited <info@riverbankcomputing.com>
 #
 # This file is part of SIP.
 #
@@ -262,7 +262,7 @@ class Makefile:
         if dir:
             self.dir = os.path.abspath(dir)
         else:
-            self.dir = os.path.curdir
+            self.dir = os.getcwd()
 
         # Assume we are building in the source tree.
         self._src_dir = self.dir
@@ -319,6 +319,7 @@ class Makefile:
         self.extra_lflags = []
         self.extra_lib_dirs = []
         self.extra_libs = []
+        self.extra_source_dirs = []
 
         # Get these once and make them available to sub-classes.
         if sys.platform == "win32":
@@ -354,11 +355,15 @@ class Makefile:
             win_exceptions = ("exceptions" in wcfg)
             win_rtti = ("rtti" in wcfg)
             win_stl = ("stl" in wcfg)
+
+            qt_version = self.config.qt_version
         else:
             win_shared = 1
             win_exceptions = 0
             win_rtti = 0
             win_stl = 0
+
+            qt_version = 0
 
         # Get what we are going to transform.
         cflags = _UniqueList()
@@ -419,10 +424,18 @@ class Makefile:
         rpaths = _UniqueList()
 
         for l in self.extra_lib_dirs:
+            l_dir = os.path.dirname(l)
+
+            # This is a hack to ignore PyQt's internal support libraries.
+            if '/qpy/' in l_dir:
+                continue
+
             # Ignore relative directories.  This is really a hack to handle
             # SIP v3 inter-module linking.
-            if os.path.dirname(l) not in ("", ".", ".."):
-                rpaths.append(l)
+            if l_dir in ("", ".", ".."):
+                continue
+
+            rpaths.append(l)
 
         if self._python:
             incdir.append(self.config.py_inc_dir)
@@ -554,7 +567,7 @@ class Makefile:
             if not self._debug:
                 defines.append("QT_NO_DEBUG")
 
-            if self.config.qt_version >= 0x040000:
+            if qt_version >= 0x040000:
                 for mod in self._qt:
                     # Note that qmake doesn't define anything for QtHelp.
                     if mod == "QtCore":
@@ -585,6 +598,14 @@ class Makefile:
                         defines.append("QT_XMLPATTERNS_LIB")
                     elif mod == "phonon":
                         defines.append("QT_PHONON_LIB")
+
+                    if qt_version >= 0x050000:
+                        if mod == "QtTest":
+                            defines.append("QT_GUI_LIB")
+
+                        if mod in ("QtSql", "QtTest"):
+                            defines.append("QT_WIDGETS_LIB")
+
             elif self._threaded:
                 defines.append("QT_THREAD_SUPPORT")
 
@@ -593,7 +614,7 @@ class Makefile:
             libdir.extend(libdir_qt)
             rpaths.extend(libdir_qt)
 
-            if self.config.qt_version >= 0x040000:
+            if qt_version >= 0x040000:
                 # Try and read QT_LIBINFIX from qconfig.pri.
                 qconfig = os.path.join(mkspecs, "qconfig.pri")
                 self._infix = self._extract_value(qconfig, "QT_LIBINFIX")
@@ -609,7 +630,26 @@ class Makefile:
                 }
 
                 # For Windows: the dependencies between Qt libraries.
-                qdepmap = {
+                qt5_depmap = {
+                    "QtDeclarative":    ("QtXmlPatterns", "QtNetwork", "QtSql", "QtScript", "QtWidgets", "QtGui", "QtCore"),
+                    "QtGui":            ("QtPrintSupport", "QtWidgets", "QtCore"),
+                    "QtHelp":           ("QtNetwork", "QtSql", "QtWidgets", "QtGui", "QtCore"),
+                    "QtMultimedia":     ("QtGui", "QtCore"),
+                    "QtNetwork":        ("QtCore", ),
+                    "QtOpenGL":         ("QtWidgets", "QtGui", "QtCore"),
+                    "QtScript":         ("QtCore", ),
+                    "QtScriptTools":    ("QtScript", "QtGui", "QtCore"),
+                    "QtSql":            ("QtCore", ),
+                    "QtSvg":            ("QtXml", "QtWidgets", "QtGui", "QtCore"),
+                    "QtTest":           ("QtGui", "QtCore"),
+                    "QtWebKit":         ("QtNetwork", "QtWebKitWidgets", "QtWidgets", "QtGui", "QtCore"),
+                    "QtXml":            ("QtCore", ),
+                    "QtXmlPatterns":    ("QtNetwork", "QtCore"),
+                    "QtDesigner":       ("QtGui", "QtCore"),
+                    "QAxContainer":     ("Qt5AxBase", "QtWidgets", "QtGui", "QtCore")
+                }
+
+                qt4_depmap = {
                     "QtAssistant":      ("QtNetwork", "QtGui", "QtCore"),
                     "QtDeclarative":    ("QtNetwork", "QtGui", "QtCore"),
                     "QtGui":            ("QtCore", ),
@@ -630,6 +670,11 @@ class Makefile:
                     "QAxContainer":     ("QtGui", "QtCore")
                 }
 
+                if qt_version >= 0x050000:
+                    qt_depmap = qt5_depmap
+                else:
+                    qt_depmap = qt4_depmap
+
                 # The QtSql .prl file doesn't include QtGui as a dependency (at
                 # least on Linux) so we explcitly set the dependency here for
                 # everything.
@@ -642,14 +687,14 @@ class Makefile:
                 # include QtGui and QtNetwork as a dependency any longer.  This
                 # seems to be a bug in Qt v4.2.0.  We explicitly set the
                 # dependencies here.
-                if self.config.qt_version >= 0x040200 and "QtAssistant" in self._qt:
+                if qt_version >= 0x040200 and "QtAssistant" in self._qt:
                     if "QtGui" not in self._qt:
                         self._qt.append("QtGui")
                     if "QtNetwork" not in self._qt:
                         self._qt.append("QtNetwork")
 
                 for mod in self._qt:
-                    lib = self._qt4_module_to_lib(mod)
+                    lib = self._qt_module_to_lib(mod)
                     libs.append(self.platform_lib(lib, self._is_framework(mod)))
 
                     if sys.platform == "win32":
@@ -662,12 +707,12 @@ class Makefile:
                         if mod in list(wdepmap.keys()):
                             deps.extend(self.optional_list(wdepmap[mod]))
 
-                        if mod in list(qdepmap.keys()):
-                            for qdep in qdepmap[mod]:
+                        if mod in list(qt_depmap.keys()):
+                            for qdep in qt_depmap[mod]:
                                 # Ignore the dependency if it is explicitly
                                 # linked.
                                 if qdep not in self._qt:
-                                    libs.append(self.platform_lib(self._qt4_module_to_lib(qdep)))
+                                    libs.append(self.platform_lib(self._qt_module_to_lib(qdep)))
 
                                     if qdep in list(wdepmap.keys()):
                                         deps.extend(self.optional_list(wdepmap[qdep]))
@@ -680,7 +725,7 @@ class Makefile:
                 qt_lib = self.config.qt_lib
 
                 if self.generator in ("MSVC", "MSVC.NET", "MSBUILD", "BMAKE") and win_shared:
-                    qt_lib = qt_lib + version_to_string(self.config.qt_version).replace(".", "")
+                    qt_lib = qt_lib + version_to_string(qt_version).replace(".", "")
 
                     if self.config.qt_edition == "non-commercial":
                         qt_lib = qt_lib + "nc"
@@ -699,17 +744,44 @@ class Makefile:
             qtincdir = self.optional_list("INCDIR_QT")
 
             if qtincdir:
-                if self.config.qt_version >= 0x040000:
+                if qt_version >= 0x040000:
                     for mod in self._qt:
                         if mod == "QAxContainer":
                             incdir.append(os.path.join(qtincdir[0], "ActiveQt"))
                         elif self._is_framework(mod):
-                            if mod == "QtAssistant" and self.config.qt_version < 0x040202:
+                            idir = libdir_qt[0]
+
+                            if mod == "QtAssistant" and qt_version < 0x040202:
                                 mod = "QtAssistantClient"
 
-                            incdir.append(os.path.join(libdir_qt[0], mod + ".framework", "Headers"))
+                            incdir.append(os.path.join(idir,
+                                    mod + ".framework", "Headers"))
+
+                            if qt_version >= 0x050000:
+                                if mod == "QtGui":
+                                    incdir.append(os.path.join(idir,
+                                            "QtWidgets.framework", "Headers"))
+                                    incdir.append(os.path.join(idir,
+                                            "QtPrintSupport.framework",
+                                            "Headers"))
+                                elif mod == "QtWebKit":
+                                    incdir.append(os.path.join(idir,
+                                            "QtWebKitWidgets.framework",
+                                            "Headers"))
                         else:
-                            incdir.append(os.path.join(qtincdir[0], mod))
+                            idir = qtincdir[0]
+
+                            incdir.append(os.path.join(idir, mod))
+
+                            if qt_version >= 0x050000:
+                                if mod == "QtGui":
+                                    incdir.append(os.path.join(idir,
+                                            "QtWidgets"))
+                                    incdir.append(os.path.join(idir,
+                                            "QtPrintSupport"))
+                                elif mod == "QtWebKit":
+                                    incdir.append(os.path.join(idir,
+                                            "QtWebKitWidgets"))
 
                 # This must go after the module include directories.
                 incdir.extend(qtincdir)
@@ -721,7 +793,7 @@ class Makefile:
             libs.extend(self.optional_list("LIBS_OPENGL"))
 
         if self._qt or self._opengl:
-            if self.config.qt_version < 0x040000 or self._opengl or "QtGui" in self._qt:
+            if qt_version < 0x040000 or self._opengl or "QtGui" in self._qt:
                 incdir.extend(self.optional_list("INCDIR_X11"))
                 libdir.extend(self.optional_list("LIBDIR_X11"))
                 libs.extend(self.optional_list("LIBS_X11"))
@@ -765,13 +837,15 @@ class Makefile:
         """
         return (self.config.qt_framework and (self.config.qt_version >= 0x040200 or mod != "QtAssistant"))
 
-    def _qt4_module_to_lib(self, mname):
-        """Return the name of the Qt4 library corresponding to a module.
+    def _qt_module_to_lib(self, mname):
+        """Return the name of the Qt library corresponding to a module.
 
         mname is the name of the module.
         """
+        qt_version = self.config.qt_version
+
         if mname == "QtAssistant":
-            if self.config.qt_version >= 0x040202 and sys.platform == "darwin":
+            if qt_version >= 0x040202 and sys.platform == "darwin":
                 lib = mname
             else:
                 lib = "QtAssistantClient"
@@ -783,17 +857,34 @@ class Makefile:
         if self._debug:
             if sys.platform == "win32":
                 lib = lib + "d"
-            elif self.config.qt_version < 0x040200 or sys.platform == "darwin":
+            elif sys.platform == "darwin":
+                if not self._is_framework(mname):
+                    lib = lib + "_debug"
+            elif qt_version < 0x040200:
                 lib = lib + "_debug"
+
+        qt5_rename = False
 
         if sys.platform == "win32" and "shared" in self.config.qt_winconfig.split():
             if (mname in ("QtCore", "QtDeclarative", "QtDesigner", "QtGui",
                           "QtHelp", "QtMultimedia", "QtNetwork", "QtOpenGL",
                           "QtScript", "QtScriptTools", "QtSql", "QtSvg",
                           "QtTest", "QtWebKit", "QtXml", "QtXmlPatterns",
-                          "phonon") or
-                (self.config.qt_version >= 0x040200 and mname == "QtAssistant")):
-                lib = lib + "4"
+                          "phonon", "QAxContainer", "QtPrintSupport",
+                          "QtWebKitWidgets", "QtWidgets") or
+                (qt_version >= 0x040200 and mname == "QtAssistant")):
+                if mname == "QAxContainer":
+                    if qt_version >= 0x050000:
+                        lib = "Qt5" + lib[1:]
+                elif qt_version >= 0x050000:
+                    qt5_rename = True
+                else:
+                    lib = lib + "4"
+        elif sys.platform.startswith("linux") and qt_version >= 0x050000:
+            qt5_rename = True
+
+        if qt5_rename:
+            lib = "Qt5" + lib[2:]
 
         return lib
 
@@ -876,7 +967,23 @@ class Makefile:
         else:
             prl_name = os.path.join(self.config.qt_lib_dir, "lib" + clib + ".prl")
 
-        return self._extract_value(prl_name, "QMAKE_PRL_LIBS").split()
+        libs = self._extract_value(prl_name, "QMAKE_PRL_LIBS").split()
+
+        if self.config.qt_version >= 0x050000:
+            xtra_libs = []
+
+            if clib in ("QtGui", "Qt5Gui"):
+                xtra_libs.append("QtWidgets")
+                xtra_libs.append("QtPrintSupport")
+            elif clib in ("QtWebKit", "Qt5WebKit"):
+                xtra_libs.append("QtWebKitWidgets")
+
+            for xtra in xtra_libs:
+                libs.extend(
+                        self.platform_lib(
+                                self._qt_module_to_lib(xtra), framework).split())
+
+        return libs
 
     def _extract_value(self, fname, vname):
         """Return the stripped value from a name=value line in a file.
@@ -1093,8 +1200,13 @@ class Makefile:
         if self._qt:
             mfile.write("MOC = %s\n" % _quote(self.required_string("MOC")))
 
+        vpath = _UniqueList(self.extra_source_dirs)
+
         if self._src_dir != self.dir:
-            mfile.write("VPATH = %s\n\n" % self._src_dir)
+            vpath.append(self._src_dir)
+
+        if vpath.as_list():
+            mfile.write("VPATH = %s\n\n" % " ".join(vpath.as_list()))
 
         # These probably don't matter.
         if self.generator == "MINGW":
@@ -1448,12 +1560,6 @@ class ModuleMakefile(Makefile):
         self.LFLAGS.extend(self.optional_list(lflags_console))
 
         if sys.platform == "darwin":
-            # 'real_prefix' exists if virtualenv is being used.
-            dl = getattr(sys, 'real_prefix', sys.exec_prefix).split(os.sep)
-
-            if "Python.framework" not in dl:
-                error("SIP requires Python to be built as a framework")
-
             self.LFLAGS.append("-undefined dynamic_lookup")
 
         Makefile.finalise(self)
@@ -1577,19 +1683,17 @@ class ModuleMakefile(Makefile):
             cpp = "moc_" + root + ".cpp"
 
             mfile.write("\n%s: %s\n" % (cpp, mf))
-            mfile.write("\t$(MOC) -o %s %s\n" % (cpp, mf))
+            mfile.write("\t$(MOC) -o %s $<\n" % cpp)
 
         mfile.write("\n$(TARGET): $(OFILES)\n")
 
-        if self.generator in ("MSVC", "MSVC.NET"):
-            implib = 'py' + self._target + '.lib'
         if self.generator in ("MSVC", "MSVC.NET", "MSBUILD"):
             if self.static:
                 mfile.write("\t$(LIB) /OUT:$(TARGET) @<<\n")
                 mfile.write("\t  $(OFILES)\n")
                 mfile.write("<<\n")
             else:
-                mfile.write("\t$(LINK) $(LFLAGS) /OUT:$(TARGET) /IMPLIB:%s @<<\n" % implib)
+                mfile.write("\t$(LINK) $(LFLAGS) /OUT:$(TARGET) @<<\n")
                 mfile.write("\t  $(OFILES) $(LIBS)\n")
                 mfile.write("<<\n")
 
@@ -1763,6 +1867,9 @@ class ProgramMakefile(Makefile):
 
         build.extend(self.optional_list("CXXFLAGS"))
 
+        # This is for Qt5.
+        build.extend(self.optional_list("CXXFLAGS_APP"))
+
         # Borland requires all flags to precede all file names.
         if self.generator != "BMAKE":
             build.append(source)
@@ -1873,7 +1980,7 @@ class ProgramMakefile(Makefile):
                 mf = os.path.join(self._src_dir, mf)
 
             mfile.write("\n%s: %s\n" % (cpp, mf))
-            mfile.write("\t$(MOC) -o %s %s\n" % (cpp, mf))
+            mfile.write("\t$(MOC) -o %s $<\n" % cpp)
 
         mfile.write("\n$(TARGET): $(OFILES)\n")
 
@@ -1919,17 +2026,59 @@ def _quote(s):
 
     s is the string.
     """
+    # On Qt5 paths often includes forward slashes so convert them.
+    if sys.platform == "win32":
+        s = s.replace("/", "\\")
+
     if s.find(" ") >= 0:
         s = '"' + s + '"'
 
     return s
 
 
-def version_to_string(v):
-    """Convert a 3 part version number encoded as a hexadecimal value to a
+def version_to_string(version, parts=3):
+    """ Convert an n-part version number encoded as a hexadecimal value to a
+    string.  version is the version number.  Returns the string.
+    """
+
+    part_list = [str((version >> 16) & 0xff)]
+
+    if parts > 1:
+        part_list.append(str((version >> 8) & 0xff))
+
+        if parts > 2:
+            part_list.append(str(version & 0xff))
+
+    return '.'.join(part_list)
+
+
+def version_from_string(version_str):
+    """ Convert a version string of the form m.n or m.n.o to an encoded version
+    number (or None if it was an invalid format).  version_str is the version
     string.
     """
-    return "%u.%u.%u" % (((v >> 16) & 0xff), ((v >> 8) & 0xff), (v & 0xff))
+
+    parts = version_str.split('.')
+    if not isinstance(parts, list):
+        return None
+
+    if len(parts) == 2:
+        parts.append('0')
+
+    if len(parts) != 3:
+        return None
+
+    version = 0
+
+    for part in parts:
+        try:
+            v = int(part)
+        except ValueError:
+            return None
+
+        version = (version << 8) + v
+
+    return version
 
 
 def read_version(filename, description, numdefine=None, strdefine=None):
@@ -2112,13 +2261,16 @@ def create_config_module(module, template, content, macros=None):
 
         line = sf.readline()
 
+    df.close()
+    sf.close()
+
 
 def version_to_sip_tag(version, tags, description):
     """Convert a version number to a SIP tag.
 
     version is the version number.  If it is negative then the latest version
-    is assumed.  (This is typically useful if a snapshot is indicated by a
-    negative version number.)
+    is assumed.  (This is typically useful if a development preview  is
+    indicated by a negative version number.)
     tags is the dictionary of tags keyed by version number.  The tag used is
     the one with the smallest key (ie. earliest version) that is greater than
     the given version number.
@@ -2129,7 +2281,7 @@ def version_to_sip_tag(version, tags, description):
     vl = list(tags.keys())
     vl.sort()
 
-    # For a snapshot use the latest tag.
+    # For a preview use the latest tag.
     if version < 0:
         tag = tags[vl[-1]]
     else:
@@ -2273,10 +2425,13 @@ def parse_build_macros(filename, names, overrides=None, properties=None):
                 self._openfile(nextfile)
                 return self.readline()
 
-            if not line and self.filestack:
-                self.currentfile = self.filestack.pop()
-                self.path = self.pathstack.pop()
-                return self.readline()
+            if not line:
+                self.currentfile.close()
+
+                if self.filestack:
+                    self.currentfile = self.filestack.pop()
+                    self.path = self.pathstack.pop()
+                    return self.readline()
 
             return line
 
@@ -2334,10 +2489,10 @@ def parse_build_macros(filename, names, overrides=None, properties=None):
             else:
                 break
 
-        line = line.strip()
+        # Strip comments and surrounding whitespace.
+        line = line.split('#', 1)[0].strip()
 
-        # Ignore comments.
-        if line and line[0] != "#":
+        if line:
             assstart = line.find("+")
             if assstart > 0 and line[assstart + 1] == '=':
                 adding = True
@@ -2359,7 +2514,7 @@ def parse_build_macros(filename, names, overrides=None, properties=None):
                     if orig_rhs is not None:
                         rhs = orig_rhs + " " + rhs
 
-                raw[lhs] = rhs
+                raw[lhs] = _expand_macro_value(raw, rhs, properties)
 
         line = f.readline()
 
@@ -2375,7 +2530,7 @@ def parse_build_macros(filename, names, overrides=None, properties=None):
 
     for lhs in list(raw.keys()):
         # Strip any prefix.
-        if lhs.find(macro_prefix) == 0:
+        if lhs.startswith(macro_prefix):
             reflhs = lhs[len(macro_prefix):]
         else:
             reflhs = lhs
@@ -2385,48 +2540,6 @@ def parse_build_macros(filename, names, overrides=None, properties=None):
             continue
 
         rhs = raw[lhs]
-
-        # Resolve any references.
-        estart = rhs.find("$$(")
-        mstart = rhs.find("$$")
-
-        while mstart >= 0 and mstart != estart:
-            rstart = mstart + 2
-            if rstart < len(rhs) and rhs[rstart] == "{":
-                rstart = rstart + 1
-                term = "}"
-            elif rstart < len(rhs) and rhs[rstart] == "[":
-                rstart = rstart + 1
-                term = "]"
-            else:
-                term = string.whitespace
-
-            mend = rstart
-            while mend < len(rhs) and rhs[mend] not in term:
-                mend = mend + 1
-
-            lhs = rhs[rstart:mend]
-
-            if term in "}]":
-                mend = mend + 1
-
-            if term == "]":
-                if properties is None or lhs not in list(properties.keys()):
-                    error("%s: property '%s' is not defined." % (filename, lhs))
-
-                value = properties[lhs]
-            else:
-                try:
-                    value = raw[lhs]
-                except KeyError:
-                    # We used to treat this as an error, but Qt v4.3.0 has at
-                    # least one case that refers to an undefined macro.  If
-                    # qmake handles it then this must be the correct behaviour.
-                    value = ""
-
-            rhs = rhs[:mstart] + value + rhs[mend:]
-            estart = rhs.find("$$(")
-            mstart = rhs.find("$$")
 
         # Expand any POSIX style environment variables.
         pleadin = ["$$(", "$("]
@@ -2508,13 +2621,58 @@ def parse_build_macros(filename, names, overrides=None, properties=None):
     return refined
 
 
+def _expand_macro_value(macros, rhs, properties):
+    """Expand the value of a macro based on ones seen so far."""
+    estart = rhs.find("$$(")
+    mstart = rhs.find("$$")
+
+    while mstart >= 0 and mstart != estart:
+        rstart = mstart + 2
+        if rstart < len(rhs) and rhs[rstart] == "{":
+            rstart = rstart + 1
+            term = "}"
+        elif rstart < len(rhs) and rhs[rstart] == "[":
+            rstart = rstart + 1
+            term = "]"
+        else:
+            term = string.whitespace
+
+        mend = rstart
+        while mend < len(rhs) and rhs[mend] not in term:
+            mend = mend + 1
+
+        lhs = rhs[rstart:mend]
+
+        if term in "}]":
+            mend = mend + 1
+
+        if term == "]":
+            # Assume a missing property expands to an empty string.
+            if properties is None:
+                value = ""
+            else:
+                value = properties.get(lhs, "")
+        else:
+            # We used to treat a missing value as an error, but Qt v4.3.0 has
+            # at least one case that refers to an undefined macro.  If qmake
+            # handles it then this must be the correct behaviour.
+            value = macros.get(lhs, "")
+
+        rhs = rhs[:mstart] + value + rhs[mend:]
+        estart = rhs.find("$$(")
+        mstart = rhs.find("$$")
+
+    return rhs
+
+
 def create_wrapper(script, wrapper, gui=0, use_arch=''):
     """Create a platform dependent executable wrapper around a Python script.
 
     script is the full pathname of the script.
     wrapper is the name of the wrapper file to create.
     gui is non-zero if a GUI enabled version of the interpreter should be used.
-    use_arch is the MacOS/X architecture to invoke python with.
+    use_arch is the MacOS/X architectures to invoke python with.  Several space
+    separated architectures may be specified.
 
     Returns the platform specific name of the wrapper.
     """
@@ -2534,18 +2692,26 @@ def create_wrapper(script, wrapper, gui=0, use_arch=''):
         # The installation of MacOS's python is a mess that changes from
         # version to version and where sys.executable is useless.
 
+        version = sys.version_info
+        py_major = version[0]
+        py_minor = version[1]
+
         if gui:
-            exe = "pythonw"
+            # In Python v3.4 and later there is no pythonw.
+            if (py_major == 3 and py_minor >= 4) or py_major >= 4:
+                exe = "python"
+            else:
+                exe = "pythonw"
         else:
             exe = "python"
 
-        version = sys.version_info
-        exe = "%s%d.%d" % (exe, version[0], version[1])
+        exe = "%s%d.%d" % (exe, py_major, py_minor)
 
         if use_arch:
             # Note that this may not work with the "standard" interpreter but
             # should with the "pythonX.Y" version.
-            exe = "arch -%s %s" % (use_arch, exe)
+            arch_flags = ' '.join(["-%s" % a for a in use_arch.split()])
+            exe = "arch %s %s" % (arch_flags, exe)
 
         wf.write("#!/bin/sh\n")
         wf.write("exec %s %s ${1+\"$@\"}\n" % (exe, script))

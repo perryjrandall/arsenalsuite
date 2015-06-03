@@ -11,6 +11,18 @@ you will completely ignore it.  However, it does expose some functionality that
 can be used by applications.
 
 
+.. class:: array
+
+    .. versionadded:: 4.15
+
+    This is the type object for the type SIP uses to represent an array of a
+    limited number of C/C++ types.  Typically the memory is not owned by Python
+    so that it is not freed when the object is garbage collected.  A
+    :class:`sip.array` object can be created from a :class:`sip.voidptr` object
+    by calling :func:`sip.voidptr.asarray`.  This allows the underlying memory
+    (interpreted as a sequence of unsigned bytes) to be processed much more
+    quickly.
+
 .. function:: cast(obj, type) -> object
 
     This does the Python equivalent of casting a C++ instance to one of its
@@ -41,6 +53,26 @@ can be used by applications.
 
     :param obj:
         the Python object.
+
+
+.. function:: enableautoconversion(type, enable) -> bool
+
+    .. versionadded:: 4.14.7
+
+    Instances of some classes may be automatically converted to other Python
+    objects even though the class has been wrapped.  This allows that behaviour
+    to be suppressed so that an instances of the wrapped class is returned
+    instead.
+
+    :param type:
+        the Python type object.
+    :param enable:
+        is ``True`` if auto-conversion should be enabled for the type.  This is
+        the default behaviour.
+    :return:
+        ``True`` or ``False`` depending on whether or not auto-conversion was
+        previously enabled for the type.  This allows the previous state to be
+        restored later on.
 
 
 .. function:: getapi(name) -> version
@@ -118,6 +150,22 @@ can be used by applications.
         the Python object.
 
 
+.. function:: setdestroyonexit(destroy)
+
+    .. versionadded:: 4.14.2
+
+    When the Python interpreter exits it garbage collects those objects that it
+    can.  This means that any corresponding C++ instances and C structures
+    owned by Python are destroyed.  Unfortunately this happens in an
+    unpredictable order and so can cause memory faults within the wrapped
+    library.  Calling this function with a value of ``False`` disables the
+    automatic destruction of C++ instances and C structures.
+
+    :param destroy:
+        ``True`` if all C++ instances and C structures owned by Python should
+        be destroyed when the interpreter exits.  This is the default.
+
+
 .. function:: settracemask(mask)
 
     If the bindings have been created with SIP's :option:`-r <sip -r>` command
@@ -151,26 +199,29 @@ can be used by applications.
 
 .. data:: SIP_VERSION
 
+    .. versionadded:: 4.2
+
     This is a Python integer object that represents the SIP version number as
     a 3 part hexadecimal number (e.g. v4.0.0 is represented as ``0x040000``).
-    It was first implemented in SIP v4.2.
 
 
 .. data:: SIP_VERSION_STR
 
+    .. versionadded:: 4.3
+
     This is a Python string object that defines the SIP version number as
-    represented as a string.  For development snapshots it will start with
-    ``snapshot-``.  It was first implemented in SIP v4.3.
+    represented as a string.  For development previews it will start with
+    ``preview-`` or ``snapshot-``.
 
 
 .. function:: transferback(obj)
 
-    This function is a wrapper around :cfunc:`sipTransferBack()`.
+    This function is a wrapper around :c:func:`sipTransferBack()`.
 
 
 .. function:: transferto(obj, owner)
 
-    This function is a wrapper around :cfunc:`sipTransferTo()`.
+    This function is a wrapper around :c:func:`sipTransferTo()`.
 
 
 .. function:: unwrapinstance(obj) -> integer
@@ -195,7 +246,8 @@ can be used by applications.
 
         :param address:
             the address, either another :class:`sip.voidptr`, ``None``, a
-            Python Capsule, a Python CObject, or an integer.
+            Python Capsule, a Python CObject, an object that implements the
+            buffer protocol or an integer.
         :param size:
             the optional associated size of the block of memory and is negative
             if the size is not known.
@@ -216,8 +268,8 @@ can be used by applications.
         .. versionadded:: 4.12
 
         This returns the item at a given index.  An exception will be raised if
-        the address does not have an associated size.  It behaves like a Python
-        ``memoryview`` object.
+        the address does not have an associated size.  In this way it behaves
+        like a Python ``memoryview`` object.
 
         :param idx:
             is the index which may either be an integer, an object that
@@ -250,8 +302,8 @@ can be used by applications.
         .. versionadded:: 4.12
 
         This updates the memory at a given index.  An exception will be raised
-        if the address does not have an associated size or is not writable.  It
-        behaves like a Python ``memoryview`` object.
+        if the address does not have an associated size or is not writable.  In
+        this way it behaves like a Python ``memoryview`` object.
 
         :param idx:
             is the index which may either be an integer, an object that
@@ -260,6 +312,20 @@ can be used by applications.
             is the data that will update the memory defined by the index.  It
             must implement the buffer interface and be the same size as the
             data that is being updated.
+
+    .. method:: asarray([size=-1]) -> :class:`sip.array`
+
+        .. versionadded:: 4.16.5
+
+        This returned the block of memory as a :class:`sip.array` object.  The
+        memory is *not* copied.
+        
+        :param size:
+            the size of the array.  If it is negative then the size associated
+            with the address is used.  If there is no associated size then an
+            exception is raised.
+        :return:
+            the :class:`sip.array` object.
 
     .. method:: ascapsule() -> capsule
 

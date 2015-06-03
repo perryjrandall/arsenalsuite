@@ -55,7 +55,7 @@ class build_ext (build_ext_base):
         Parse the sbf file specified to extract the name of the generated source
         files. Make them absolute assuming they reside in the temp directory.
         """
-        for L in file(sbf):
+        for L in open(sbf).readlines():
             key, value = L.split("=", 1)
             if key.strip() == "sources":
                 out = []
@@ -118,6 +118,10 @@ class build_ext (build_ext_base):
 
         # Add the SIP include directory to the include path
         if extension is not None:
+            # Command line sip_opts take precedence.
+            if len(self.sip_opts) == 0:
+                self.sip_opts.extend(extension.swig_opts)
+
             extension.include_dirs.append(self._sip_inc_dir())
             depends = extension.depends
         else:
