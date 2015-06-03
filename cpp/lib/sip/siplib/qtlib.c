@@ -2,7 +2,7 @@
  * The SIP library code that implements the interface to the optional module
  * supplied Qt support.
  *
- * Copyright (c) 2011 Riverbank Computing Limited <info@riverbankcomputing.com>
+ * Copyright (c) 2015 Riverbank Computing Limited <info@riverbankcomputing.com>
  *
  * This file is part of SIP.
  *
@@ -72,7 +72,11 @@ static void *newSignal(void *txrx, const char **sig)
 static void *createUniversalSlot(sipWrapper *txSelf, const char *sig,
         PyObject *rxObj, const char *slot, const char **member, int flags)
 {
-    void *us = sipQtSupport->qt_create_universal_slot(txSelf, sig, rxObj, slot,
+    void *us;
+
+    assert(sipQtSupport->qt_create_universal_slot);
+
+    us = sipQtSupport->qt_create_universal_slot(txSelf, sig, rxObj, slot,
             member, flags);
 
     if (us && txSelf)
@@ -83,11 +87,25 @@ static void *createUniversalSlot(sipWrapper *txSelf, const char *sig,
 
 
 /*
- * Invoke a single slot (Qt or Python) and return the result.
+ * Invoke a single slot (Qt or Python) and return the result.  Don't check if
+ * any receiver C++ object still exists.
  */
 PyObject *sip_api_invoke_slot(const sipSlot *slot, PyObject *sigargs)
 {
+    return sip_api_invoke_slot_ex(slot, sigargs, TRUE);
+}
+
+
+/*
+ * Invoke a single slot (Qt or Python) and return the result.  Optionally check
+ * that any receiver C++ object still exist.
+ */
+PyObject *sip_api_invoke_slot_ex(const sipSlot *slot, PyObject *sigargs,
+        int no_receiver_check)
+{
     PyObject *sa, *oxtype, *oxvalue, *oxtb, *sfunc, *sref;
+
+    assert(sipQtSupport);
 
     /* Keep some compilers quiet. */
     oxtype = oxvalue = oxtb = NULL;
@@ -142,7 +160,8 @@ PyObject *sip_api_invoke_slot(const sipSlot *slot, PyObject *sigargs)
          * If the receiver wraps a C++ object then ignore the call if it no
          * longer exists.
          */
-        if (PyObject_TypeCheck(self, (PyTypeObject *)&sipSimpleWrapper_Type) &&
+        if (!no_receiver_check &&
+            PyObject_TypeCheck(self, (PyTypeObject *)&sipSimpleWrapper_Type) &&
             sip_api_get_address((sipSimpleWrapper *)self) == NULL)
         {
             Py_XDECREF(sref);
@@ -307,6 +326,9 @@ PyObject *sip_api_invoke_slot(const sipSlot *slot, PyObject *sigargs)
  */
 int sip_api_same_slot(const sipSlot *sp, PyObject *rxObj, const char *slot)
 {
+    assert(sipQtSupport);
+    assert(sipQtSupport->qt_same_name);
+
     /* See if they are signals or Qt slots, ie. they have a name. */
     if (slot != NULL)
     {
@@ -351,6 +373,9 @@ int sip_api_same_slot(const sipSlot *sp, PyObject *rxObj, const char *slot)
 void *sipGetRx(sipSimpleWrapper *txSelf, const char *sigargs, PyObject *rxObj,
            const char *slot, const char **memberp)
 {
+    assert(sipQtSupport);
+    assert(sipQtSupport->qt_find_slot);
+
     if (slot != NULL)
         if (isQtSlot(slot) || isQtSignal(slot))
         {
@@ -383,6 +408,8 @@ void *sipGetRx(sipSimpleWrapper *txSelf, const char *sigargs, PyObject *rxObj,
 void *sip_api_convert_rx(sipWrapper *txSelf, const char *sigargs,
         PyObject *rxObj, const char *slot, const char **memberp, int flags)
 {
+    assert(sipQtSupport);
+
     if (slot == NULL)
         return createUniversalSlot(txSelf, sigargs, rxObj, NULL, memberp, flags);
 
@@ -413,6 +440,9 @@ void *sip_api_convert_rx(sipWrapper *txSelf, const char *sigargs,
 PyObject *sip_api_connect_rx(PyObject *txObj, const char *sig, PyObject *rxObj,
         const char *slot, int type)
 {
+    assert(sipQtSupport);
+    assert(sipQtSupport->qt_connect);
+
     /* Handle Qt signals. */
     if (isQtSignal(sig))
     {
@@ -453,6 +483,10 @@ PyObject *sip_api_connect_rx(PyObject *txObj, const char *sig, PyObject *rxObj,
 PyObject *sip_api_disconnect_rx(PyObject *txObj,const char *sig,
                 PyObject *rxObj,const char *slot)
 {
+    assert(sipQtSupport);
+    assert(sipQtSupport->qt_disconnect);
+    assert(sipQtSupport->qt_destroy_universal_slot);
+
     /* Handle Qt signals. */
     if (isQtSignal(sig))
     {
@@ -500,6 +534,8 @@ PyObject *sip_api_disconnect_rx(PyObject *txObj,const char *sig,
  */
 void sip_api_free_sipslot(sipSlot *slot)
 {
+    assert(sipQtSupport);
+
     if (slot->name != NULL)
     {
         sip_api_free(slot->name);
@@ -535,6 +571,8 @@ static char *sipStrdup(const char *s)
  */
 int sip_api_save_slot(sipSlot *sp, PyObject *rxObj, const char *slot)
 {
+    assert(sipQtSupport);
+
     sp -> weakSlot = NULL;
 
     if (slot == NULL)

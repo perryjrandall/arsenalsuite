@@ -1,7 +1,7 @@
 /*
  * The parse tree transformation module for SIP.
  *
- * Copyright (c) 2011 Riverbank Computing Limited <info@riverbankcomputing.com>
+ * Copyright (c) 2015 Riverbank Computing Limited <info@riverbankcomputing.com>
  *
  * This file is part of SIP.
  *
@@ -64,8 +64,7 @@ static void resolveFuncTypes(sipSpec *pt, moduleDef *mod, classDef *c_scope,
 static void resolvePySigTypes(sipSpec *,moduleDef *,classDef *,overDef *,signatureDef *,int);
 static void resolveVariableType(sipSpec *,varDef *);
 static void fatalNoDefinedType(scopedNameDef *);
-static void getBaseType(sipSpec *,moduleDef *,classDef *,argDef *);
-static void resolveType(sipSpec *,moduleDef *,classDef *,argDef *, int);
+static void resolveType(sipSpec *,moduleDef *,classDef *,argDef *,int);
 static void searchClassScope(sipSpec *,classDef *,scopedNameDef *,argDef *);
 static void searchMappedTypes(sipSpec *,moduleDef *,scopedNameDef *,argDef *);
 static void searchEnums(sipSpec *,scopedNameDef *,argDef *);
@@ -115,7 +114,20 @@ void transform(sipSpec *pt)
 
     while (cd != NULL)
     {
-        classDef *next = cd -> next;
+        classDef *next;
+
+        /*
+         * Take the opportunity to strip any classes that are only template
+         * arguments.
+         */
+        while (isTemplateArg(cd))
+            if ((cd = cd->next) == NULL)
+                break;
+
+        if (cd == NULL)
+            break;
+
+        next = cd -> next;
 
         cd -> next = rev;
         rev = cd;
@@ -659,6 +671,7 @@ static void moveClassCasts(sipSpec *pt, moduleDef *mod, classDef *cd)
         ad->name = NULL;
         ad->argflags = ARG_IN | (al->arg.argflags & (ARG_IS_REF | ARG_IS_CONST));
         ad->nrderefs = al->arg.nrderefs;
+        memcpy(ad->derefs, al->arg.derefs, sizeof (ad->derefs));
         ad->defval = NULL;
         ad->u.cd = cd;
 
@@ -783,7 +796,8 @@ static void moveGlobalSlot(sipSpec *pt, moduleDef *mod, memberDef *gmd)
 
         if (mdhead == NULL)
         {
-            fatal("One of the arguments of ");
+            fatal("%s:%d: One of the arguments of ", od->sloc.name,
+                    od->sloc.linenr);
             prOverloadName(stderr, od);
             fatal(" must be a class or enum\n");
         }
@@ -798,14 +812,16 @@ static void moveGlobalSlot(sipSpec *pt, moduleDef *mod, memberDef *gmd)
         {
             if (second)
             {
-                fatal("The first argument of ");
+                fatal("%s:%d: The first argument of ", od->sloc.name,
+                        od->sloc.linenr);
                 prOverloadName(stderr, od);
                 fatal(" must be a class or enum\n");
             }
 
             if (mod != gmd->module && arg0->atype == enum_type)
             {
-                fatal("The first argument of ");
+                fatal("%s:%d: The first argument of ", od->sloc.name,
+                        od->sloc.linenr);
                 prOverloadName(stderr, od);
                 fatal(" must be a class\n");
             }
@@ -1353,7 +1369,7 @@ static void transformTypedefs(sipSpec *pt, moduleDef *mod)
     for (td = pt->typedefs; td != NULL; td = td->next)
         if (td->module == mod)
             if (td->ecd == NULL || !isTemplateClass(td->ecd))
-                getBaseType(pt, td->module, td->ecd, &td->type);
+                resolveType(pt, td->module, td->ecd, &td->type, FALSE);
 }
 
 
@@ -1427,7 +1443,7 @@ static void transformCasts(sipSpec *pt, classDef *cd)
     {
         classDef *dcd;
 
-        getBaseType(pt, cd->iff->module, cd, &al->arg);
+        resolveType(pt, cd->iff->module, cd, &al->arg, FALSE);
 
         if (al->arg.atype == class_type)
             dcd = al->arg.u.cd;
@@ -1568,6 +1584,8 @@ static void transformScopeOverloads(sipSpec *pt, classDef *c_scope,
                 if (samePythonSignature(&prev->pysig, &od->pysig))
                 {
                     ifaceFileDef *iff;
+
+                    fatal("%s:%d: ", od->sloc.name, od->sloc.linenr);
 
                     if (mt_scope != NULL)
                         iff = mt_scope->iff;
@@ -1728,7 +1746,8 @@ static void getVirtuals(sipSpec *pt, classDef *cd)
 
 
 /*
- * Get the list of visible virtual functions for a class.
+ * Update the list of visible virtual functions for a base class from a class
+ * in its MRO.
  */
 static void getClassVirtuals(classDef *base, classDef *cd)
 {
@@ -1736,69 +1755,75 @@ static void getClassVirtuals(classDef *base, classDef *cd)
 
     for (od = cd->overs; od != NULL; od = od->next)
     {
-        virtOverDef **tailp, *vod;
+        mroDef *mro;
+        int is_nearer;
+        overDef *reimp;
 
         if (!isVirtual(od) || isPrivate(od))
             continue;
 
         /*
-         * See if a virtual of this name and signature is already in the list.
+         * See if there is an implementation nearer in the class hierarchy with
+         * the same name that will hide it.
          */
-        for (tailp = &base->vmembers; (vod = *tailp) != NULL; tailp = &vod->next)
-            if (strcmp(vod->o.cppname, od->cppname) == 0 && sameOverload(&vod->o, od))
-                break;
- 
-        if (vod == NULL)
+        is_nearer = FALSE;
+        reimp = NULL;
+
+        for (mro = base->mro; mro->cd != cd; mro = mro->next)
         {
+            overDef *nod;
+
+            if (isDuplicateSuper(mro))
+                continue;
+
             /*
-             * See if there is a non-virtual reimplementation nearer in the
-             * class hierarchy.
+             * Ignore classes that are on a different branch of the class
+             * hierarchy.
              */
+            if (!isSubClass(mro->cd, cd))
+                continue;
 
-            mroDef *mro;
-            classDef *scope = NULL;
-            overDef *eod;
-
-            for (mro = base->mro; mro->cd != cd; mro = mro->next)
+            for (nod = mro->cd->overs; nod != NULL; nod = nod->next)
             {
-                if (isDuplicateSuper(mro))
-                    continue;
+                if (strcmp(nod->cppname, od->cppname) == 0)
+                {
+                    is_nearer = TRUE;
 
-                /*
-                 * Ignore classes that are on a different branch of the class
-                 * hierarchy.
-                 */
-                if (!isSubClass(mro->cd, cd))
-                    continue;
+                    /*
+                     * Re-implementations explicitly marked as virtual will
+                     * already have been handled.
+                     */
+                    if (!isVirtual(nod) && sameSignature(nod->cppsig, od->cppsig, TRUE) && isConst(nod) == isConst(od) && !isAbstract(nod))
+                        reimp = nod;
 
-                for (eod = mro->cd->overs; eod != NULL; eod = eod->next)
-                    if (strcmp(eod->cppname, od->cppname) == 0 && sameSignature(eod->cppsig, od->cppsig, TRUE) && isConst(eod) == isConst(od) && !isAbstract(eod))
-                    {
-                        scope = mro->cd;
-                        break;
-                    }
-
-                if (scope != NULL)
                     break;
+                }
             }
+
+            if (is_nearer)
+                break;
+        }
+
+        if (!is_nearer || reimp != NULL)
+        {
+            virtOverDef *vod;
 
             vod = sipMalloc(sizeof (virtOverDef));
  
             vod->o = *od;
-            vod->scope = (scope != NULL ? scope : cd);
-            vod->next = NULL;
+            vod->next = base->vmembers;
  
-            *tailp = vod;
+            base->vmembers = vod;
 
             /*
-             * If there was a nearer reimplementation then we use its
-             * protection and abstract flags.
+             * If there was a reimplementation then we use its protection and
+             * abstract flags.
              */
-            if (scope != NULL)
-            {
+             if (reimp != NULL)
+             {
                 vod->o.overflags &= ~(SECT_MASK | OVER_IS_ABSTRACT);
-                vod->o.overflags |= (SECT_MASK | OVER_IS_ABSTRACT) & eod->overflags;
-            }
+                vod->o.overflags |= (SECT_MASK | OVER_IS_ABSTRACT) & reimp->overflags;
+             }
         }
     }
 }
@@ -1857,14 +1882,15 @@ static void resolveCtorTypes(sipSpec *pt,classDef *scope,ctorDef *ct)
     /* Handle any C++ signature. */
     if (ct->cppsig != NULL && ct->cppsig != &ct->pysig)
         for (a = 0; a < ct -> cppsig -> nrArgs; ++a)
-            getBaseType(pt, scope->iff->module, scope, &ct->cppsig->args[a]);
+            resolveType(pt, scope->iff->module, scope, &ct->cppsig->args[a],
+                    TRUE);
  
     /* Handle the Python signature. */
     for (a = 0; a < ct -> pysig.nrArgs; ++a)
     {
         argDef *ad = &ct -> pysig.args[a];
 
-        getBaseType(pt, scope->iff->module, scope, ad);
+        resolveType(pt, scope->iff->module, scope, ad, FALSE);
 
         if (!supportedType(scope,NULL,ad,FALSE) && (ct -> cppsig == &ct -> pysig || ct -> methodcode == NULL))
         {
@@ -1890,11 +1916,25 @@ static void resolveFuncTypes(sipSpec *pt, moduleDef *mod, classDef *c_scope,
     if (od->cppsig != &od->pysig)
     {
         int a;
+        argDef *res = &od->cppsig->result;
 
-        getBaseType(pt, mod, c_scope, &od->cppsig->result);
+        resolveType(pt, mod, c_scope, res, TRUE);
+
+        if ((res->atype != void_type || res->nrderefs != 0) && isVirtual(od) && !supportedType(c_scope, od, &od->cppsig->result, FALSE) && od->virthandler->virtcode == NULL)
+        {
+            fatal("%s:%d: ", od->sloc.name, od->sloc.linenr);
+
+            if (c_scope != NULL)
+            {
+                fatalScopedName(classFQCName(c_scope));
+                fatal("::");
+            }
+
+            fatal("%s() unsupported virtual function return type - provide %%VirtualCatcherCode\n", od->cppname);
+        }
 
         for (a = 0; a < od->cppsig->nrArgs; ++a)
-            getBaseType(pt, mod, c_scope, &od->cppsig->args[a]);
+            resolveType(pt, mod, c_scope, &od->cppsig->args[a], TRUE);
     }
  
     /* Handle the Python signature. */
@@ -1906,26 +1946,29 @@ static void resolveFuncTypes(sipSpec *pt, moduleDef *mod, classDef *c_scope,
     if (isSSizeReturnSlot(od->common))
         if ((res->atype != ssize_type && res->atype != int_type) || res->nrderefs != 0 ||
             isReference(res) || isConstArg(res))
-            fatal("%s slots must return SIP_SSIZE_T\n",
-                    od->common->pyname->text);
+            fatal("%s:%d: %s slots must return SIP_SSIZE_T\n", od->sloc.name,
+                    od->sloc.linenr, od->common->pyname->text);
 
     /* These slots must return int. */
     if (isIntReturnSlot(od->common))
         if (res->atype != int_type || res->nrderefs != 0 ||
             isReference(res) || isConstArg(res))
-            fatal("%s slots must return int\n", od->common->pyname->text);
+            fatal("%s:%d: %s slots must return int\n", od->sloc.name,
+                    od->sloc.linenr, od->common->pyname->text);
 
     /* These slots must return void. */
     if (isVoidReturnSlot(od->common))
         if (res->atype != void_type || res->nrderefs != 0 ||
             isReference(res) || isConstArg(res))
-            fatal("%s slots must return void\n", od->common->pyname->text);
+            fatal("%s:%d: %s slots must return void\n", od->sloc.name,
+                    od->sloc.linenr, od->common->pyname->text);
 
     /* These slots must return long. */
     if (isLongReturnSlot(od->common))
         if (res->atype != long_type || res->nrderefs != 0 ||
             isReference(res) || isConstArg(res))
-            fatal("%s slots must return long\n", od->common->pyname->text);
+            fatal("%s:%d: %s slots must return long\n", od->sloc.name,
+                    od->sloc.linenr, od->common->pyname->text);
 }
 
 
@@ -1942,27 +1985,38 @@ static void resolvePySigTypes(sipSpec *pt, moduleDef *mod, classDef *scope,
     {
         if (issignal)
         {
+            fatal("%s:%d: ", od->sloc.name, od->sloc.linenr);
+
             if (scope != NULL)
             {
                 fatalScopedName(classFQCName(scope));
                 fatal("::");
             }
 
-            fatal("%s() signals must return void\n",od -> cppname);
+            fatal("%s() signals must return void\n", od->cppname);
         }
 
-        getBaseType(pt, mod, scope, res);
+        resolveType(pt, mod, scope, res, FALSE);
 
         /* Results must be simple. */
-        if (!supportedType(scope,od,res,FALSE) && (od -> cppsig == &od -> pysig || od -> methodcode == NULL))
+        if (!supportedType(scope, od, res, FALSE))
         {
-            if (scope != NULL)
-            {
-                fatalScopedName(classFQCName(scope));
-                fatal("::");
-            }
+            int need_meth;
 
-            fatal("%s() unsupported function return type - provide %%MethodCode and a %s signature\n",od -> cppname,(pt -> genc ? "C" : "C++"));
+            need_meth = (od->cppsig == &od->pysig || od->methodcode == NULL);
+
+            if (need_meth)
+            {
+                fatal("%s:%d: ", od->sloc.name, od->sloc.linenr);
+
+                if (scope != NULL)
+                {
+                    fatalScopedName(classFQCName(scope));
+                    fatal("::");
+                }
+
+                fatal("%s() unsupported function return type - provide %%MethodCode and a %s signature\n", od->cppname, (pt->genc ? "C" : "C++"));
+            }
         }
     }
 
@@ -1970,7 +2024,7 @@ static void resolvePySigTypes(sipSpec *pt, moduleDef *mod, classDef *scope,
     {
         argDef *ad = &pysig -> args[a];
 
-        getBaseType(pt, mod, scope, ad);
+        resolveType(pt, mod, scope, ad, FALSE);
 
         if (ad -> atype == slotcon_type)
             resolvePySigTypes(pt, mod, scope, od, ad->u.sa, TRUE);
@@ -1983,6 +2037,8 @@ static void resolvePySigTypes(sipSpec *pt, moduleDef *mod, classDef *scope,
         {
             if (!supportedType(scope,od,ad,FALSE))
             {
+                fatal("%s:%d: ", od->sloc.name, od->sloc.linenr);
+
                 if (scope != NULL)
                 {
                     fatalScopedName(classFQCName(scope));
@@ -1992,18 +2048,29 @@ static void resolvePySigTypes(sipSpec *pt, moduleDef *mod, classDef *scope,
                 fatal("%s() unsupported signal argument type\n", od->cppname);
             }
         }
-        else if (!supportedType(scope,od,ad,TRUE) && (od -> cppsig == &od -> pysig || od -> methodcode == NULL || (isVirtual(od) && od -> virthandler -> virtcode == NULL)))
+        else if (!supportedType(scope, od, ad, TRUE))
         {
-            if (scope != NULL)
+            int need_meth, need_virt;
+
+            need_meth = (od->cppsig == &od->pysig || od->methodcode == NULL);
+            need_virt = (isVirtual(od) && od->virthandler->virtcode == NULL);
+
+            if (need_meth || need_virt)
             {
-                fatalScopedName(classFQCName(scope));
-                fatal("::");
+                if (od->sloc.name != NULL)
+                    fatal("%s:%d: ", od->sloc.name, od->sloc.linenr);
+
+                if (scope != NULL)
+                {
+                    fatalScopedName(classFQCName(scope));
+                    fatal("::");
+                }
+
+                if (need_meth)
+                    fatal("%s() unsupported function argument type - provide %%MethodCode and a %s signature\n", od->cppname, (pt->genc ? "C" : "C++"));
+
+                fatal("%s() unsupported function argument type - provide %%MethodCode, %%VirtualCatcherCode and a C++ signature\n", od->cppname);
             }
-
-            if (isVirtual(od))
-                fatal("%s() unsupported function argument type - provide %%MethodCode, a valid %%VirtualCatcherCode and a valid C++ signature\n",od -> cppname);
-
-            fatal("%s() unsupported function argument type - provide %%MethodCode and a valid %s signature\n",od -> cppname,(pt -> genc ? "C" : "C++"));
         }
 
         if (scope != NULL)
@@ -2020,7 +2087,7 @@ static void resolveVariableType(sipSpec *pt, varDef *vd)
     int bad = TRUE;
     argDef *vtype = &vd->type;
 
-    getBaseType(pt, vd->module, vd->ecd, vtype);
+    resolveType(pt, vd->module, vd->ecd, vtype, FALSE);
 
     switch (vtype->atype)
     {
@@ -2075,6 +2142,8 @@ static void resolveVariableType(sipSpec *pt, varDef *vd)
     case pycallable_type:
     case pyslice_type:
     case pytype_type:
+    case pybuffer_type:
+    case capsule_type:
         /* These are supported without pointers or references. */
 
         if (!isReference(vtype) && vtype->nrderefs == 0)
@@ -2208,6 +2277,8 @@ static int supportedType(classDef *cd,overDef *od,argDef *ad,int outputs)
     case pycallable_type:
     case pyslice_type:
     case pytype_type:
+    case pybuffer_type:
+    case capsule_type:
         if (isReference(ad))
         {
             if (isConstArg(ad))
@@ -2391,10 +2462,28 @@ static int sameVirtualHandler(virtHandlerDef *vhd1,virtHandlerDef *vhd2)
 {
     int a;
 
+    /*
+     * If both have code then they must be different.  However it doesn't
+     * follow that if they don't then they are the same.  We should really take
+     * whether they correspond to reimplementations of the same method into
+     * account.  In the meantime this will be correct in most cases.
+     */
+    if (vhd1->virtcode != NULL && vhd2->virtcode != NULL)
+        return FALSE;
+
     if (isTransferVH(vhd1) != isTransferVH(vhd2))
         return FALSE;
 
+    if (abortOnException(vhd1) != abortOnException(vhd2))
+        return FALSE;
+
     if (!sameArgType(&vhd1->pysig->result, &vhd2->pysig->result, TRUE))
+        return FALSE;
+
+    if (isAllowNone(&vhd1->pysig->result) != isAllowNone(&vhd2->pysig->result))
+        return FALSE;
+
+    if (isDisallowNone(&vhd1->pysig->result) != isDisallowNone(&vhd2->pysig->result))
         return FALSE;
 
     if (!sameSignature(vhd1->pysig, vhd2->pysig, TRUE))
@@ -2836,16 +2925,6 @@ static void scopeDefaultValue(sipSpec *pt,classDef *cd,argDef *ad)
 
 
 /*
- * Make sure a type is a base type.
- */
-static void getBaseType(sipSpec *pt, moduleDef *mod, classDef *c_scope,
-        argDef *type)
-{
-    resolveType(pt, mod, c_scope, type, FALSE);
-}
-
-
-/*
  * Resolve a type if possible.
  */
 static void resolveType(sipSpec *pt, moduleDef *mod, classDef *c_scope,
@@ -2891,7 +2970,7 @@ static void resolveType(sipSpec *pt, moduleDef *mod, classDef *c_scope,
         int sa;
 
         for (sa = 0; sa < type->u.sa->nrArgs; ++sa)
-            getBaseType(pt, mod, c_scope, &type->u.sa->args[sa]);
+            resolveType(pt, mod, c_scope, &type->u.sa->args[sa], FALSE);
     }
 
     /* See if the type refers to an instantiated template. */
@@ -2976,6 +3055,7 @@ static mappedTypeDef *instantiateMappedTypeTemplate(sipSpec *pt, moduleDef *mod,
             mappedtype_iface, NULL, type);
     mtd->iff->module = mod;
 
+    mtd->mtflags = mtt->mt->mtflags;
     mtd->doctype = templateString(mtt->mt->doctype, type_names, type_values);
 
     appendCodeBlockList(&mtd->iff->hdrcode,
@@ -3194,15 +3274,21 @@ static mappedTypeDef *copyTemplateType(mappedTypeDef *mtd, argDef *ad)
         if (tdd != NULL)
         {
             /*
-             * Create the copy now that we know it is needed and if it hasn't
-             * already been done.
+             * Create an appropriately deep copy now that we know it is needed
+             * and if it hasn't already been done.
              */
             if (mtd_copy == mtd)
             {
+                templateDef *td_copy;
+
                 mtd_copy = sipMalloc(sizeof (mappedTypeDef));
                 *mtd_copy = *mtd;
 
-                dst = &mtd_copy->type.u.td->types;
+                td_copy = sipMalloc(sizeof (templateDef));
+                *td_copy = *mtd->type.u.td;
+                mtd_copy->type.u.td = td_copy;
+
+                dst = &td_copy->types;
             }
 
             dst->args[a].original_type = tdd;
@@ -3226,12 +3312,21 @@ void searchTypedefs(sipSpec *pt, scopedNameDef *snd, argDef *ad)
 
         if (res == 0)
         {
+            int i;
+
             /* Copy the type. */
             ad->atype = td->type.atype;
             ad->argflags |= td->type.argflags;
-            ad->nrderefs += td->type.nrderefs;
             ad->doctype = td->type.doctype;
             ad->u = td->type.u;
+
+            for (i = 0; i < td->type.nrderefs; ++i)
+            {
+                if (ad->nrderefs >= MAX_NR_DEREFS - 1)
+                    fatal("Internal error - increase the value of MAX_NR_DEREFS\n");
+
+                ad->derefs[ad->nrderefs++] = td->type.derefs[i];
+            }
 
             if (ad->original_type == NULL)
                 ad->original_type = td;

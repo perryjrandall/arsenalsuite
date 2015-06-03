@@ -61,9 +61,6 @@ The following example shows argument and function annotations::
 
     void exec(QWidget * /Transfer/) /ReleaseGIL, PyName=call_exec/;
 
-Note that the current version of SIP does not complain about unknown
-annotations, or annotations used out of their correct context.
-
 
 .. _ref-arg-annos:
 
@@ -73,9 +70,10 @@ Argument Annotations
 .. argument-annotation:: AllowNone
 
     This boolean annotation specifies that the value of the corresponding
-    argument (which should be either :stype:`SIP_PYCALLABLE`,
-    :stype:`SIP_PYDICT`, :stype:`SIP_PYLIST`, :stype:`SIP_PYSLICE`,
-    :stype:`SIP_PYTUPLE` or :stype:`SIP_PYTYPE`) may be ``None``.
+    argument (which should be either :stype:`SIP_PYBUFFER`,
+    :stype:`SIP_PYCALLABLE`, :stype:`SIP_PYDICT`, :stype:`SIP_PYLIST`,
+    :stype:`SIP_PYSLICE`, :stype:`SIP_PYTUPLE` or :stype:`SIP_PYTYPE`) may be
+    ``None``.
 
 
 .. argument-annotation:: Array
@@ -131,6 +129,15 @@ Argument Annotations
         // The wrapper for this function will be used for anything that Python
         // can convert to an integer, except for floating point numbers.
         void foo(int);
+
+
+.. argument-annotation:: DisallowNone
+
+    .. versionadded:: 4.16.4
+
+    This boolean annotation specifies that the value of the corresponding
+    argument (which should be a pointer to either a C++ class or a mapped type)
+    must not be ``None``.
 
 
 .. argument-annotation:: DocType
@@ -203,6 +210,18 @@ Argument Annotations
     the reference to the previous argument is discarded.  Note that ownership
     of the argument is not changed.
 
+    If the function is a method then the reference is kept by the instance,
+    i.e. ``self``.  Therefore the extra reference is released when the instance
+    is garbage collected.
+
+    If the function is a class method or an ordinary function and it is
+    annotated using the :fanno:`Factory` annotation, then the reference is
+    kept by the object created by the function.  Therefore the extra reference
+    is released when that object is garbage collected.
+
+    Otherwise the reference is not kept by any specific object and will never
+    be released.
+
     If a value is specified then it defines the argument's key.  Arguments of
     different constructors or methods that have the same key are assumed to
     refer to the same value.
@@ -253,8 +272,8 @@ Argument Annotations
     This boolean annotation is used with functions or methods that return a
     ``void *`` or ``const void *``.  It identifies an argument that defines the
     size of the block of memory whose address is being returned.  This allows
-    the ``sip.voidptr`` object that wraps the address to support the Python
-    buffer protocol.
+    the :class:`sip.voidptr` object that wraps the address to support the
+    Python buffer protocol.
 
 
 .. argument-annotation:: SingleShot
@@ -272,6 +291,10 @@ Argument Annotations
     instance) is transferred from Python to C++.  In addition, if the argument
     is of a class method, then it is associated with the class instance with
     regard to the cyclic garbage collector.
+
+    If the annotation is used with the :aanno:`Array` annotation then the
+    array of pointers to the sequence of C structures or C++ class instances
+    that is created on the heap is not automatically freed.
 
     See :ref:`ref-object-ownership` for more detail.
 
@@ -340,6 +363,9 @@ Class Annotations
     If a class or mapped type has different implementations enabled for
     different ranges of version numbers then those ranges must not overlap.
 
+    Note that sub-classing from a class that has different implementations is
+    not currently supported.
+
     See :ref:`ref-incompat-apis` for more detail.
 
 
@@ -355,38 +381,38 @@ Class Annotations
     is specified then when the wrapped instance is garbage collected the C or
     C++ instance is not destroyed but instead added to a list of delayed
     instances.  When the interpreter exits then the function
-    :cfunc:`sipDelayedDtors()` is called with the list of delayed instances.
-    :cfunc:`sipDelayedDtors()` can then choose to call (or ignore) the
+    :c:func:`sipDelayedDtors()` is called with the list of delayed instances.
+    :c:func:`sipDelayedDtors()` can then choose to call (or ignore) the
     destructors in any desired order.
 
-    The :cfunc:`sipDelayedDtors()` function must be specified using the
+    The :c:func:`sipDelayedDtors()` function must be specified using the
     :directive:`%ModuleCode` directive.
 
-.. cfunction:: void sipDelayedDtors(const sipDelayedDtor *dd_list)
+.. c:function:: void sipDelayedDtors(const sipDelayedDtor *dd_list)
 
     :param dd_list:
         the linked list of delayed instances.
 
-.. ctype:: sipDelayedDtor
+.. c:type:: sipDelayedDtor
 
     This structure describes a particular delayed destructor.
 
-    .. cmember:: const char *dd_name
+    .. c:member:: const char* dd_name
 
         This is the name of the class excluding any package or module name.
 
-    .. cmember:: void *dd_ptr
+    .. c:member:: void* dd_ptr
 
         This is the address of the C or C++ instance to be destroyed.  It's
-        exact type depends on the value of :cmember:`dd_isderived`.
+        exact type depends on the value of :c:member:`dd_isderived`.
 
-    .. cmember:: int dd_isderived
+    .. c:member:: int dd_isderived
 
-        This is non-zero if the type of :cmember:`dd_ptr` is actually the
+        This is non-zero if the type of :c:member:`dd_ptr` is actually the
         generated derived class.  This allows the correct destructor to be
         called.  See :ref:`ref-derived-classes`.
 
-    .. cmember:: sipDelayedDtor *dd_next
+    .. c:member:: sipDelayedDtor* dd_next
 
         This is the address of the next entry in the list or zero if this is
         the last one.
@@ -400,6 +426,25 @@ Class Annotations
     This boolean annotation is used to specify that the class is deprecated.
     It is the equivalent of annotating all the class's constructors, function
     and methods as being deprecated.
+
+
+.. class-annotation:: FileExtension
+
+    .. versionadded:: 4.16.6
+
+    This string annotation is used to specify the filename extension to be used
+    for the file containing the generated code for this class.  A separate file
+    will be generated even if the :option:`-j <sip -j>` command line option is
+    specified.
+
+.. class-annotation:: ExportDerived
+
+    .. versionadded:: 4.15
+
+    In many cases SIP generates a derived class for each class being wrapped
+    (see :ref:`ref-derived-classes`).  Normally this is used internally.  This
+    boolean annotation specifies that the declaration of the class is exported
+    and able to be used by handwritten code.
 
 
 .. class-annotation:: External
@@ -416,6 +461,31 @@ Class Annotations
     creating the type object for this C structure or C++ type.
 
     See the section :ref:`ref-types-metatypes` for more details.
+
+
+.. class-annotation:: Mixin
+
+    .. versionadded:: 4.15
+
+    This boolean annotation specifies that the class can be used as a mixin
+    with other wrapped classes.
+    
+    Normally a Python application cannot define a new class that is derived
+    from more than one wrapped class.  In C++ this would create a new C++
+    class.  This cannot be done from Python.  At best a C++ instance of each of
+    the wrapped classes can be created and wrapped as separate Python objects.
+    However some C++ classes may function perfectly well with this restriction.
+    Such classes are often intended to be used as mixins.
+
+    If this annotation is specified then a separate instance of the class is
+    created.  The main instance automatically delegates to the instance of the
+    mixin when required.  A mixin class should have the following
+    characteristics:
+
+    - Any constructor arguments should be able to be specified using keyword
+      arguments.
+
+    - The class should not have any virtual methods.
 
 
 .. class-annotation:: NoDefaultCtors
@@ -444,6 +514,20 @@ Class Annotations
     See the section :ref:`ref-types-metatypes` for more details.
 
 
+.. class-annotation:: VirtualErrorHandler
+
+    .. versionadded:: 4.14
+
+    This name annotation specifies the handler (defined by the
+    :directive:`%VirtualErrorHandler` directive) that is called when a Python
+    re-implementation of any of the class's virtual C++ functions raises a
+    Python exception.  If not specified then the handler specified by the
+    ``default_VirtualErrorHandler`` argument of the :directive:`%Module`
+    directive is used.
+
+    .. seealso:: :fanno:`NoVirtualErrorHandler`, :fanno:`VirtualErrorHandler`, :directive:`%VirtualErrorHandler`
+
+
 .. _ref-mapped-type-annos:
 
 Mapped Type Annotations
@@ -468,6 +552,8 @@ Mapped Type Annotations
     If a class or mapped type has different implementations enabled for
     different ranges of version numbers then those ranges must not overlap.
 
+    It should not be used with mapped type templates.
+
     See :ref:`ref-incompat-apis` for more detail.
 
 
@@ -482,15 +568,38 @@ Mapped Type Annotations
 .. mapped-type-annotation:: NoRelease
 
     This boolean annotation is used to specify that the mapped type does not
-    support the :cfunc:`sipReleaseType()` function.  Any
+    support the :c:func:`sipReleaseType()` function.  Any
     :directive:`%ConvertToTypeCode` should not create temporary instances of
-    the mapped type, i.e. it should not return :cmacro:`SIP_TEMPORARY`.
+    the mapped type, i.e. it should not return :c:macro:`SIP_TEMPORARY`.
+
+
+.. mapped-type-annotation:: PyName
+
+    This name annotation specifies an alternative name for the mapped type
+    being wrapped which is used when it is referred to from Python.  The only
+    time a Python type is created for a mapped type is when it is used as a
+    scope for static methods or enums.
+    
+    It should not be used with mapped type templates.
+
+    .. seealso:: :directive:`%AutoPyName`
 
 
 .. _ref-enum-annos:
 
 Enum Annotations
 ----------------
+
+.. enum-annotation:: NoScope
+
+    .. versionadded:: 4.15
+
+    This boolean annotation specifies the that scope of an enum's members
+    should be omitted in the generated code.  Normally this would mean that the
+    generated code will not compile.  However it is useful when defining
+    pseudo-enums, for example, to wrap global values so that they are defined
+    (in Python) within the scope of a class.
+
 
 .. enum-annotation:: PyName
 
@@ -531,6 +640,26 @@ Exception Annotations
 Function Annotations
 --------------------
 
+.. function-annotation:: AbortOnException
+
+    .. versionadded:: 4.16.4
+
+    This boolean annotation specifies that when a Python re-implementation of a
+    virtual C++ function raises a Python exception then ``abort()`` is
+    called after the error handler returns.
+
+
+.. function-annotation:: AllowNone
+
+    .. versionadded:: 4.16.4
+
+    This boolean annotation is used to specify that the value returned by the
+    function (which should be either :stype:`SIP_PYBUFFER`,
+    :stype:`SIP_PYCALLABLE`, :stype:`SIP_PYDICT`, :stype:`SIP_PYLIST`,
+    :stype:`SIP_PYSLICE`, :stype:`SIP_PYTUPLE` or :stype:`SIP_PYTYPE`) may be
+    ``None``.
+
+
 .. function-annotation:: API
 
     .. versionadded:: 4.9
@@ -556,7 +685,8 @@ Function Annotations
     compulsory arguments if one is specified.  (SIP will automatically generate
     a constructor with no arguments if no constructors are specified.)  This
     annotation is used to explicitly specify which constructor to use.  Zero is
-    passed as the value of any arguments to the constructor.
+    passed as the value of any arguments to the constructor.  This annotation
+    is ignored if the class defines :directive:`%InstanceCode`.
 
 
 .. function-annotation:: Deprecated
@@ -564,6 +694,15 @@ Function Annotations
     This boolean annotation is used to specify that the constructor or function
     is deprecated.  A deprecation warning is issued whenever the constructor or
     function is called.
+
+
+.. function-annotation:: DisallowNone
+
+    .. versionadded:: 4.16.4
+
+    This boolean annotation is used to specify that the value returned by the
+    function (which should be a pointer to either a C++ class or a mapped type)
+    must not be ``None``.
 
 
 .. function-annotation:: DocType
@@ -605,6 +744,10 @@ Function Annotations
     This optional integer annotation serves the same purpose as the
     :aanno:`KeepReference` argument annotation when applied to the type of the
     value returned by the function.
+
+    If the function is a class method or an ordinary function then the
+    reference is not kept by any other object and so the returned value will
+    never be garbage collected.
 
 
 .. function-annotation:: KeywordArgs
@@ -693,19 +836,45 @@ Function Annotations
     like certain functions to only support positional arguments.
 
 
+.. function-annotation:: NoRaisesPyException
+
+    .. versionadded:: 4.13.1
+
+    This boolean annotation specifies that the function or constructor does not
+    raise a Python exception to indicate that an error occurred.
+
+    .. seealso:: :fanno:`RaisesPyException`
+
+
+.. function-annotation:: NoVirtualErrorHandler
+
+    .. versionadded:: 4.14
+
+    This boolean annotation specifies that when a Python re-implementation of a
+    virtual C++ function raises a Python exception then ``PyErr_Print()`` is
+    always called.  Any error handler specified by either the
+    :fanno:`VirtualErrorHandler` function annotation, the
+    :canno:`VirtualErrorHandler` class annotation or the
+    ``default_VirtualErrorHandler`` argument of the :directive:`%Module`
+    directive is ignored.
+
+    .. seealso:: :fanno:`VirtualErrorHandler`, :canno:`VirtualErrorHandler`, :directive:`%VirtualErrorHandler`
+
+
 .. function-annotation:: Numeric
 
     This boolean annotation specifies that the operator should be interpreted
-    as a numeric operator rather than a sequence operator.  Python uses the
-    ``+`` operator for adding numbers and concatanating sequences, and the
-    ``*`` operator for multiplying numbers and repeating sequences.  SIP tries
-    to work out which is meant by looking at other operators that have been
-    defined for the type.  If it finds either ``-``, ``-=``, ``/``, ``/=``,
-    ``%`` or ``%=`` defined then it assumes that ``+``, ``+=``, ``*`` and
-    ``*=`` should be numeric operators.  Otherwise, if it finds either ``[]``,
-    :meth:`__getitem__`, :meth:`__setitem__` or :meth:`__delitem__` defined
-    then it assumes that they should be sequence operators.  This annotation is
-    used to force SIP to treat the operator as numeric.
+    as a numeric operator rather than a sequence operator.
+    
+    Python uses the ``+`` operator for adding numbers and concatanating
+    sequences, and the ``*`` operator for multiplying numbers and repeating
+    sequences.  Unless this or the :fanno:`Sequence` annotation is specified,
+    SIP tries to work out which is meant by looking at other operators that
+    have been defined for the type.  If it finds either ``-``, ``-=``, ``/``,
+    ``/=``, ``%`` or ``%=`` defined then it assumes that ``+``, ``+=``, ``*``
+    and ``*=`` should be numeric operators.  Otherwise, if it finds either
+    ``[]``, :meth:`__getitem__`, :meth:`__setitem__` or :meth:`__delitem__`
+    defined then it assumes that they should be sequence operators.
 
 
 .. function-annotation:: PostHook
@@ -748,10 +917,12 @@ Function Annotations
 
     .. versionadded:: 4.12.1
 
-    This boolean annotation specifies that the function raises a Python
-    exception to indicate that an error occurred.  Any current exception is
-    cleared before the function is called.  It is ignored if the
-    :directive:`%MethodCode` directive is used.
+    This boolean annotation specifies that the function or constructor raises a
+    Python exception to indicate that an error occurred.  Any current exception
+    is cleared before the function or constructor is called.  It is ignored if
+    the :directive:`%MethodCode` directive is used.
+
+    .. seealso:: :fanno:`NoRaisesPyException`
 
 
 .. function-annotation:: ReleaseGIL
@@ -761,6 +932,24 @@ Function Annotations
     reacquired afterwards.  It should be used for functions that might block or
     take a significant amount of time to execute.  See :ref:`ref-gil` and the
     :fanno:`HoldGIL` annotation.
+
+
+.. function-annotation:: Sequence
+
+    .. versionadded:: 4.14.7
+
+    This boolean annotation specifies that the operator should be interpreted
+    as a sequence operator rather than a numeric operator.
+
+    Python uses the ``+`` operator for adding numbers and concatanating
+    sequences, and the ``*`` operator for multiplying numbers and repeating
+    sequences.  Unless this or the :fanno:`Numeric` annotation is specified,
+    SIP tries to work out which is meant by looking at other operators that
+    have been defined for the type.  If it finds either ``-``, ``-=``, ``/``,
+    ``/=``, ``%`` or ``%=`` defined then it assumes that ``+``, ``+=``, ``*``
+    and ``*=`` should be numeric operators.  Otherwise, if it finds either
+    ``[]``, :meth:`__getitem__`, :meth:`__setitem__` or :meth:`__delitem__`
+    defined then it assumes that they should be sequence operators.
 
 
 .. function-annotation:: Transfer
@@ -799,10 +988,36 @@ Function Annotations
     See :ref:`ref-object-ownership` for more detail.
 
 
+.. function-annotation:: VirtualErrorHandler
+
+    .. versionadded:: 4.14
+
+    This name annotation specifies the handler (defined by the
+    :directive:`%VirtualErrorHandler` directive) that is called when a Python
+    re-implementation of the virtual C++ function raises a Python exception.
+    If not specified then the handler specified by the class's
+    :canno:`VirtualErrorHandler` is used.
+
+    .. seealso:: :fanno:`NoVirtualErrorHandler`, :canno:`VirtualErrorHandler`, :directive:`%VirtualErrorHandler`
+
+
 .. _ref-typedef-annos:
 
 Typedef Annotations
 -------------------
+
+.. typedef-annotation:: Capsule
+
+    .. versionadded:: 4.14.1
+
+    This boolean annotation may only be used when the base type is ``void *``
+    and specifies that a Python capsule object is used to wrap the value rather
+    than a :class:`sip.voidptr`.  The advantage of using a capsule is that name
+    based type checking is performed using the name of the type being defined.
+
+    For versions of Python that do not support capules :class:`sip.voidptr` is
+    used instead and name based type checking is not performed.
+
 
 .. typedef-annotation:: DocType
 
@@ -842,6 +1057,20 @@ Typedef Annotations
     argument annotation when applied to the type being defined.
 
 
+.. typedef-annotation:: PyName
+
+    .. versionadded:: 4.13.1
+
+    This name annotation only applies when the typedef is being used to create
+    the wrapping for a class defined using a template and specifies an
+    alternative name for the class when it is referred to from Python.  It is
+    required when a class name is the same as a Python keyword.  It may also
+    be used to avoid name clashes with other objects (e.g. enums, exceptions,
+    functions) that have the same name in the same C++ scope.
+
+    .. seealso:: :directive:`%AutoPyName`
+
+
 .. _ref-variable-annos:
 
 Variable Annotations
@@ -859,6 +1088,16 @@ Variable Annotations
 
     This string annotation serves the same purpose as the :aanno:`Encoding`
     argument annotation when applied to the type of the variable being defined.
+
+
+.. variable-annotation:: NoSetter
+
+    .. versionadded:: 4.16
+
+    This boolean annotation specifies that the variable will have no setter and
+    will be read-only.  Because SIP does not fully understand C/C++ types
+    (particularly ``const`` arrays) it is sometimes necessary to explicitly
+    annotate a variable as being read-only.
 
 
 .. variable-annotation:: PyInt

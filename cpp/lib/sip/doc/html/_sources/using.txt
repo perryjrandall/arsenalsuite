@@ -37,7 +37,7 @@ The corresponding SIP specification file would then look something like this::
 
     // Define the SIP wrapper to the word library.
 
-    %Module word 0
+    %Module word
 
     class Word {
 
@@ -56,10 +56,7 @@ file, but SIP does not include a full C++ parser.  Let's look at the
 differences between the two files.
 
     - The :directive:`%Module` directive has been added [#]_.  This is used to
-      name the Python module that is being created and to give it a
-      *generation* number.  In this example these are ``word`` and ``0``
-      respectively.  The generation number is effectively the version number of
-      the module.
+      name the Python module that is being created, ``word`` in this example.
 
     - The :directive:`%TypeHeaderCode` directive has been added.  The text
       between this and the following :directive:`%End` directive is included
@@ -158,7 +155,7 @@ The corresponding SIP specification file would then look something like this::
 
     /* Define the SIP wrapper to the word library. */
 
-    %CModule word 0
+    %Module(name=word, language="C")
 
     struct Word {
 
@@ -174,10 +171,10 @@ The corresponding SIP specification file would then look something like this::
 
 Again, let's look at the differences between the two files.
 
-    - The :directive:`%CModule` directive has been added.  This has the same
-      syntax as the :directive:`%Module` directive used in the previous example
-      but tells SIP that the library being wrapped is implemented in C rather
-      than C++.
+    - The :directive:`%Module` directive specifies that the library being
+      wrapped is implemented in C rather than C++.  Because we are now
+      supplying an optional argument to the directive we must also specify the
+      module name as an argument.
 
     - The :directive:`%TypeHeaderCode` directive has been added.
 
@@ -233,13 +230,13 @@ The corresponding SIP specification file would then look something like this::
 
     // Define the SIP wrapper to the hello library.
 
-    %Module hello 0
+    %Module hello
 
     %Import QtGui/QtGuimod.sip
 
     %If (Qt_4_2_0 -)
 
-    class Hello : QLabel {
+    class Hello : public QLabel {
 
     %TypeHeaderCode
     #include <hello.h>
@@ -263,7 +260,7 @@ previous examples.
 
     - The :directive:`%Import` directive has been added to specify that we are
       extending the class hierarchy defined in the file ``QtGui/QtGuimod.sip``.
-      This file is part of PyQt.  The build system will take care of finding
+      This file is part of PyQt4.  The build system will take care of finding
       the file's exact location.
 
     - The :directive:`%If` directive has been added to specify that everything
@@ -275,9 +272,6 @@ previous examples.
       SIP specification.  The build system provides support to ``configure.py``
       scripts for working out the correct tags to use according to which
       version of the library is actually installed.
-
-    - The ``public`` keyword used in defining the super-classes has been
-      removed.  This is not supported by SIP.
 
     - The :aanno:`TransferThis` annotation has been added to the constructor's
       argument.  It specifies that if the argument is not 0 (i.e. the ``Hello``
@@ -297,7 +291,7 @@ previous examples.
 
     - The :directive:`%If` directive has been added to specify that everything
       up to the matching :directive:`%End` directive does not apply to Windows.
-      ``WS_WIN`` is another tag defined by PyQt, this time using the
+      ``WS_WIN`` is another tag defined by PyQt4, this time using the
       :directive:`%Platforms` directive.  Tags defined by the
       :directive:`%Platforms` directive are mutually exclusive, i.e. only one
       may be valid at a time [#]_.
@@ -309,8 +303,8 @@ prevent the automatic generation of a public copy constructor.
 We now look at the ``configure.py`` script.  This is a little different to the
 script in the previous examples for two related reasons.
 
-Firstly, PyQt includes a pure Python module called ``pyqtconfig`` that extends
-the SIP build system for modules, like our example, that build on top of PyQt.
+Firstly, PyQt4 includes a pure Python module called ``pyqtconfig`` that extends
+the SIP build system for modules, like our example, that build on top of PyQt4.
 It deals with the details of which version of Qt is being used (i.e. it
 determines what the correct tags are) and where it is installed.  This is
 called a module's configuration module.
@@ -330,10 +324,10 @@ Now we have two scripts.  First the ``configure.py`` script::
     # system.
     build_file = "hello.sbf"
 
-    # Get the PyQt configuration information.
+    # Get the PyQt4 configuration information.
     config = pyqtconfig.Configuration()
 
-    # Get the extra SIP flags needed by the imported PyQt modules.  Note that
+    # Get the extra SIP flags needed by the imported PyQt4 modules.  Note that
     # this normally only includes those flags (-x and -t) that relate to SIP's
     # versioning system.
     pyqt_sip_flags = config.pyqt_sip_flags
@@ -430,7 +424,7 @@ Next we have the ``helloconfig.py.in`` template script::
 Again, we hope that the scripts are self documenting.
 
 .. [#] Some parts of a SIP specification aren't subject to version control.
-.. [#] Actually in ``versions.sip``.  PyQt uses the :directive:`%Include`
+.. [#] Actually in ``versions.sip``.  PyQt4 uses the :directive:`%Include`
        directive to split the SIP specification for Qt across a large number of
        separate ``.sip`` files.
 .. [#] Tags can also be defined by the :directive:`%Feature` directive.  These
@@ -467,8 +461,8 @@ C++ call the destructor).
 This applies equally to C structures where the structure is returned to the
 heap using the ``free()`` function.
 
-See also :cfunc:`sipTransferTo()`, :cfunc:`sipTransferBack()` and
-:cfunc:`sipTransferBreak()`.
+See also :c:func:`sipTransferTo()`, :c:func:`sipTransferBack()` and
+:c:func:`sipTransferBreak()`.
 
 
 .. _ref-types-metatypes:
@@ -508,7 +502,7 @@ by importing modules.
 
 If you want to use your own meta-type or super-type then they must be
 sub-classed from one of the SIP provided types.  Your types must be registered
-using :cfunc:`sipRegisterPyType()`.  This is normally done in code specified
+using :c:func:`sipRegisterPyType()`.  This is normally done in code specified
 using the :directive:`%InitialisationCode` directive.
 
 As an example, PyQt4 uses :directive:`%DefaultMetatype` to specify a new
@@ -533,7 +527,7 @@ tens of thousands of attributes.
 
 SIP allows you to extend the handling of lazy attributes to your own attribute
 types by allowing you to register an attribute getter handler (using
-:cfunc:`sipRegisterAttributeGetter()`).  This will be called just before a
+:c:func:`sipRegisterAttributeGetter()`).  This will be called just before a
 type's dictionary is accessed for the first time.
 
 
@@ -555,14 +549,14 @@ SIP v4.6 introduced support for wide characters (i.e. the ``wchar_t`` type).
 Python's C API includes support for converting between unicode objects and wide
 character strings and arrays.  When converting from a unicode object to wide
 characters SIP creates the string or array on the heap (using memory allocated
-using :cfunc:`sipMalloc()`).  This then raises the problem of how this memory
+using :c:func:`sipMalloc()`).  This then raises the problem of how this memory
 is subsequently freed.
 
 The following describes how SIP handles this memory in the different situations
 where this is an issue.
 
     - When a wide string or array is passed to a function or method then the
-      memory is freed (using :cfunc:`sipFree()`) after than function or method
+      memory is freed (using :c:func:`sipFree()`) after than function or method
       returns.
 
     - When a wide string or array is returned from a virtual method then SIP
@@ -638,7 +632,7 @@ that has multiple implementations is imported for the first time.
 Note this mechanism is not intended as a way or providing equally valid
 alternative APIs.  For example::
 
-    %API MyAPI 1
+    %API(name=MyAPI, version=1)
 
     class Foo
     {
@@ -660,3 +654,32 @@ If the following Python code is executed then an exception will be raised::
 This is because when version 1 of the *MyAPI* API (the default) is enabled
 there is no *Baz.bar()* implementation and *Foo.bar()* will not be called
 instead as might be expected.
+
+
+.. _ref-private-sip:
+
+Building a Private Copy of the ``sip`` Module
+---------------------------------------------
+
+.. versionadded:: 4.12
+
+The ``sip`` module is intended to be be used by all the SIP generated modules
+of a particular Python installation.  For example PyQt3 and PyQt4 are
+completely independent of each other but will use the same ``sip`` module.
+However, this means that all the generated modules must be built against a
+compatible version of SIP.  If you do not have complete control over the
+Python installation then this may be difficult or even impossible to achieve.
+
+To get around this problem you can build a private copy of the ``sip`` module
+that has a different name and/or is placed in a different Python package.  To
+do this you use the :option:`--sip-module <configure.py --sip-module>` option
+to specify the name (optionally including a package name) of your private copy.
+
+As well as building the private copy of the module, the version of the
+``sip.h`` header file will also be specific to the private copy.  You will
+probably also want to use the :option:`--incdir <configure.py -e>` option to
+specify the directory where the header file will be installed to avoid
+overwriting a copy of the default version that might already be installed.
+
+When building your generated modules you must ensure that they ``#include`` the
+private copy of ``sip.h`` instead of any default version.

@@ -37,6 +37,14 @@ The full set of command line options is:
     to generate a platform and compiler specific Makefile for the module.  By
     default the file is not generated.
 
+.. cmdoption:: -B <TAG>
+
+    .. versionadded:: 4.16
+
+    The tag is added to the list of *backstops*.  The option may be given more
+    than once if multiple timelines have been defined.  See the
+    :directive:`%Timeline` directive for more details.
+
 .. cmdoption:: -c <DIR>
 
     The name of the directory (which must exist) into which all of the
@@ -131,6 +139,9 @@ The full set of command line options is:
 
 .. cmdoption:: -T
 
+    .. deprecated:: 4.16.6
+        This option is now ignored and timestamps are always disabled.
+
     By default the generated C and C++ source and header files include a
     timestamp specifying when they were generated.  This option disables the
     timestamp so that the contents of the generated files remain constant for a
@@ -155,4 +166,10 @@ The full set of command line options is:
 
 .. cmdoption:: -z <FILE>
 
+    .. deprecated:: 4.16.6
+        Use the ``@<FILE>`` style instead.
+
     The name of a file containing more command line options.
+
+Command line options can also be placed in a file and passed on the command
+line using the ``@`` prefix.
