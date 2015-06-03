@@ -44,13 +44,13 @@ public:
 
 	t__Iter at( uint );
 
+	t__List slice( int start, int end = INT_MAX, int step = 1 );
+	
 	t__Iter find( const Record & );
 
 	using b__List::remove;
 	t__Iter remove( const t__Iter & );
 
-	int remove( const Record & );
-	
 	t__Iter begin() const;
 
 	t__Iter end() const;
@@ -59,6 +59,8 @@ public:
 		{ return t__List( RecordList::filter( column, value, keepMatches ) ); }
 	t__List filter( const QString & column, const QRegExp & re, bool keepMatches = true ) const
 		{ return t__List( RecordList::filter( column, re, keepMatches ) ); }
+        t__List filter( const Expression & exp, bool keepMatches = true ) const
+                { return t__List( RecordList::filter( exp, keepMatches ) ); }
 
 	t__List sorted( const QString & c, bool a = true ) const { return t__List( RecordList::sorted( c, a ) ); }
 

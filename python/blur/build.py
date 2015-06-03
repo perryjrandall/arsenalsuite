@@ -4,22 +4,29 @@ import sys
 import string
 import re
 import shutil
-import popen2
 import traceback
 import cPickle
 import ConfigParser
 import exceptions
+import psutil
 from defaultdict import *
 
 All_Targets = []
 Targets = []
 Config_Replacement_File = None
 Args = []
+Generated_Installers = {}
 
 try:
     import subprocess
-except: pass
-
+except:
+    import popen2
+	
+class BlurException(Exception):
+    def __init__(self, value):
+        self.value = value
+    def __str__(self):
+        return repr(self.value)
 
 class TerminalControllerDummy:
     def render(self,text):
@@ -54,17 +61,24 @@ def add_target(target):
 
 # Returns a tuple containing (returncode,stdout)
 # Cmd can be a string or a list of args
-def cmd_output(cmd,outputObject=None,shell=False):
+def cmd_output(cmd,outputObject=None,shell=None):
     p = None
     outputFd = None
     pollRunVal = None
-    if sys.platform == 'win32':
-        p = subprocess.Popen(cmd,stdout=subprocess.PIPE,shell=shell)
-        outputFd = p.stdout
-    else:
-        p = popen2.Popen4(cmd)
-        pollRunVal = -1
-        outputFd = p.fromchild
+    if shell is None:
+        shell = sys.platform != 'win32'
+    try:
+        if 'subprocess' in globals():
+            p = subprocess.Popen(cmd,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,shell=shell)
+            outputFd = p.stdout
+        else:
+            p = popen2.Popen4(cmd)
+            pollRunVal = -1
+            outputFd = p.fromchild
+    except Exception, e:
+        print "Error starting command: " + str(cmd)
+        raise e
+
     output = ''
     ret = 0
     def processOutput(existing, new, outputProgress):
@@ -163,9 +177,9 @@ class Target:
         if not self.has_arg('verbose'):
             print output,
         print term.render("${RED}Error Building Target${NORMAL}: %s, cmd was: %s" % (self.name,cmd))
-        sys.exit(1)
+        raise Exception()
         
-    def run_cmd(self,cmd,shell=False,noThrow=False):
+    def run_cmd(self,cmd,shell=None,noThrow=False):
         if self.has_arg('verbose') or self.has_arg('show-commands'):
             print term.render('${BLUE}Running Command${NORMAL}:'), str(cmd)
         try:
@@ -215,7 +229,7 @@ class Target:
                 try:
                     d = find_target(d)
                 except:
-                    raise ("Target.build_deps: couldn't find dependancy: %s for target: %s" % (d, self.name))
+                    raise BlurException("Target.build_deps: couldn't find dependancy: %s for target: %s" % (d, self.name))
             if isinstance(d,Target):
                 d.build()
     
@@ -281,7 +295,7 @@ class SipTarget(Target):
         self.InstallDone = False
         self.config = ""
         self.name=name
-    
+
     def is_built(self):
         if self.has_arg('clean') and not self.CleanDone:
             return False
@@ -291,7 +305,7 @@ class SipTarget(Target):
 
     def configure_command(self):
         pass
-    
+
     def build_run(self):
         self.check_arg_sanity()
 
@@ -307,6 +321,7 @@ class SipTarget(Target):
             self.config += " -u"
         if self.has_arg("trace"):
             self.config += " -r"
+
         if self.has_arg('build') or (not os.path.exists(os.getcwd() + 'Makefile') and not self.name.startswith('py') ):
             self.configure_command()
             self.run_cmd(self.config)
@@ -315,9 +330,23 @@ class SipTarget(Target):
             self.CleanDone = True
             self.built = False
             self.InstallDone = False
+            if os.name == 'nt':
+                wantedName = self.name.replace("static","").replace("py","",1)
+                print "Cleaning sip working dir"
+                if os.path.isfile('sip' + wantedName + '/' + wantedName + '.lib'):
+                    os.remove('sip' + wantedName + '/' + wantedName + '.lib')
+                if os.path.isfile('sip' + wantedName + '/py' + wantedName + '.lib'):
+                    os.remove('sip' + wantedName + '/py' + wantedName + '.lib')
         if self.has_arg('build'):
             self.run_make()
             self.built = True
+            if os.name == 'nt':
+                wantedName = self.name.replace("static","").replace("py","",1)
+                print "Checking for the existance of (%s)" % ('sip' + wantedName + '/' + wantedName + '.lib')
+                if os.path.isfile('sip' + wantedName + '/' + wantedName + '.lib'):
+                    os.remove('sip' + wantedName + '/' + wantedName + '.lib')
+                if os.path.isfile('sip' + wantedName + '/py' + wantedName + '.lib'):
+                    os.remove('sip' + wantedName + '/py' + wantedName + '.lib')
         if self.has_arg('install') and not self.InstallDone:
             cmd = 'install'
             try:
@@ -404,16 +433,19 @@ class QMakeTarget(Target):
 # Nullsoft install - used to generate windows installers
 class NSISTarget(Target):
     if sys.platform=='win32':
-        NSIS_PATHS = ["C:/Program Files (x86)/NSIS/","C:/Program Files/NSIS/"]
+        NSIS_PATHS = ["C:/Program Files (x86)/NSIS/","C:/Program Files/NSIS/","E:/Program Files (x86)/NSIS/","E:/Program Files/NSIS/"]
         NSIS = "makensis.exe"
         CanBuild = True
     else:
         CanBuild = False
-    def __init__(self,name,dir,file,pre_deps=[],makensis_extra_options=[]):
+    def __init__(self,name,dir,file,pre_deps=[],makensis_extra_options=[], revdir=None):
         Target.__init__(self,name,dir,pre_deps)
         self.File = file
         self.ExtraOptions = makensis_extra_options
-        
+        self.RevDir = revdir
+        if not self.RevDir:
+            self.RevDir = dir
+
     # Only buildable on win32
     def is_buildable(self):
         return NSISTarget.CanBuild
@@ -422,14 +454,11 @@ class NSISTarget(Target):
         for p in self.NSIS_PATHS:
             if os.access(p,os.F_OK):
                 return p + "makensis.exe"
-        raise "Couldn't find nsis cmd, searched " + self.NSIS_PATHS
+		raise Exception("Couldn't find nsis cmd, searched " + str(self.NSIS_PATHS))
         return None
     
     def makensis_options(self):
-        try:
-            p = self.find_nsis()
-        except:
-            return
+        p = self.find_nsis()
         file = os.getcwd() + "/" + self.File
         cmd_parts = [p]
         plat = 'Unkown'
@@ -438,6 +467,8 @@ class NSISTarget(Target):
         if self.has_arg('X86_64'):
             plat += '_64'
         cmd_parts.append( '/DPLATFORM=%s' % plat )
+        rev = GetRevision(self.RevDir)
+        cmd_parts.append( '/DREVISION=%s' % rev )
         if self.ExtraOptions:
             cmd_parts += self.ExtraOptions
         cmd_parts.append(file)
@@ -446,18 +477,39 @@ class NSISTarget(Target):
     def build_run(self):
         cmd_parts = self.makensis_options()
         (ret,output) = self.run_cmd( cmd_parts )
+        outputFile = None
+        for line in output.splitlines():
+            outputMatch = re.match( r'Output:\s+"(.*)"', line )
+            if outputMatch:
+                outputFile = outputMatch.group(1)
+        if outputFile is None:
+            raise ("Unable to parse output file from output\n"+output)
+        Generated_Installers[self.name] = outputFile
         if self.has_arg('install'):
-            outputFile = None
-            for line in output.splitlines():
-                outputMatch = re.match( r'Output:\s+"(.*)"', line )
-                if outputMatch:
-                    outputFile = outputMatch.group(1)
-            if outputFile is None:
-                raise ("Unable to parse output file from output\n"+output)
             if self.has_arg('progress') or self.has_arg('-verbose'):
                 print term.render("${YELLOW}Installing${NORMAL}"), outputFile
             self.run_cmd( [outputFile,'/S'] )
 
+class KillTarget(Target):
+    def __init__(self, name, path, applications):
+        Target.__init__(self,name, path)
+        self.name = name
+        self.apps = applications
+    def is_buildable(self):
+        return True
+    def build_run(self):
+        for proc in psutil.process_iter():
+            try:
+                if proc.name() in self.apps:
+                    print "Terminating process (%s)" % (proc.name())
+                    try:
+                        proc.kill()
+                    except AccessDenied, ad:
+                        print "Unable to kill the process"
+            except:
+                # We can't read process names of system owned procs, so we ignore these errors
+                pass
+			
 # Finds the subwcrev.exe program
 # Part of toroisesvn used to get revision info for a file/dir
 def find_wcrev():
@@ -465,11 +517,15 @@ def find_wcrev():
     for p in WCREV_PATHS:
         if os.access(p,os.F_OK):
             return p + "/" + "subwcrev.exe"
-    raise "Couldn't find subwcrev.exe, searched " + WCREV_PATHS
+    raise Exception("Couldn't find subwcrev.exe, searched " + WCREV_PATHS)
     return None
 
-# Gets the svn revision from the current directory
-def GetRevision(dir):
+def isSubversion(dir):
+    return os.path.exists(os.path.join(dir,'.svn'))
+
+def GetRevision_nocache(dir):
+    if not isSubversion(dir):
+        return 0
     if sys.platform == 'win32':
         wcrev = find_wcrev()
         (ret,output) = cmd_output([wcrev,dir])
@@ -487,6 +543,17 @@ def GetRevision(dir):
             return m.group(1)
     return None
 
+# Gets the svn revision from the current directory
+rev_cache = {}
+def GetRevision(dir):
+    global rev_cache
+    if dir in rev_cache:
+        return rev_cache[dir]
+    rev = GetRevision_nocache(dir)
+    if rev:
+        rev_cache[dir] = rev
+    return rev
+
 # Takes a template file, runs subwcrev.exe on it and outputs to output
 class WCRevTarget(Target):
     def __init__(self,name,dir,revdir,input,output):
@@ -496,6 +563,9 @@ class WCRevTarget(Target):
         self.Revdir = revdir
     
     def build_run(self):
+        if not isSubversion(self.Revdir):
+            shutil.copyfile(self.Input,self.Output)
+            return
         if sys.platform == 'win32':
             p = find_wcrev()
             self.run_cmd( [p,self.Revdir,self.Input,self.Output,"-f"] )
@@ -622,12 +692,18 @@ class RPMTarget(Target):
         Target.__init__(self,targetName,dir,pre_deps)
         self.SpecTemplate = specTemplate
         self.Version = version
-        #self.Revision = GetRevision(dir)
-        self.Revision = "DrD"
+        self.Revision = GetRevision(dir)
         self.PackageName = packageName
         self.BuiltRPMS = []
         self.InstallDone = False
         self.pre_deps = pre_deps
+        self.BuildRoot = '/usr/src/redhat/'
+        try:
+            if os.path.exists('/etc/redhat-release'):
+                match = re.search( 'release ([\d\.]+)', open('/etc/redhat-release','r').read())
+                if match and float(match.group(1)) >= 6.0:
+                    self.BuildRoot = '/root/rpmbuild/'
+        except: pass
     
     # Only buildable on linux, this should probably check for the existance
     # of rpmbuild and other required commands.
@@ -651,8 +727,8 @@ class RPMTarget(Target):
             destDir = os.environ['DESTDIR']
             buildRoot = "--buildroot %s" % destDir
         if not self.built:
-            sourceDir = '/usr/src/redhat/SOURCES/'
-            specDir = '/usr/src/redhat/SPECS/'
+            sourceDir = self.BuildRoot + 'SOURCES/'
+            specDir = self.BuildRoot + 'SPECS/'
             tarball = destDir + sourceDir + '%s-%s-%s.tgz' % (self.PackageName,self.Version,self.Revision)
             specDest = destDir + specDir + '%s.spec' % self.PackageName
             dirName = os.path.split(self.dir)[1]
@@ -661,12 +737,15 @@ class RPMTarget(Target):
                 os.makedirs(destDir + sourceDir)
             if not os.path.exists(destDir + specDir):
                 os.makedirs(destDir + specDir)
+            if os.path.exists(tarball):
+                os.remove(tarball)
 
             if self.run_cmd('tar -C .. -czf %s %s' % (tarball,dirName))[0]:
                 raise "Unable to create rpm tarball"
             
             if self.run_cmd('cat %s | sed "s/\\$WCREV\\\\$/%s/" | sed "s/\\$VERSION\\\\$/%s/" > %s' % (self.SpecTemplate,self.Revision,self.Version,specDest) )[0]:
                 raise "Unable to process spec file template."
+
             if self.run_cmd('sed -i "s/BuildRoot:.*$/BuildRoot: %s/" %s' % (destDir.replace('/', '\/'),specDest) )[0]:
                 raise "Unable to process spec file template."
 
@@ -679,6 +758,7 @@ class RPMTarget(Target):
                 res = re.match('Wrote: (.+)$',line)
                 if res:
                     self.BuiltRPMS.append(res.group(1))
+                    print line
 
         if self.has_arg('install') and not self.InstallDone:
             for rpm in self.BuiltRPMS:
@@ -711,6 +791,27 @@ class UploadTarget(Target):
     def build_run(self):
         for file in self.files:
             self.run_cmd(['scp',file,"%s:%s" % (self.host,self.dest)])
+
+class ClassGenTarget(Target):
+    def __init__(self,name,dir,schema, pre_deps = [], post_deps = []):
+        Target.__init__(self,name,dir,pre_deps,post_deps)
+        self.Schema = schema
+        
+    def get_command(self):
+        # Here is the static command for running classmaker to generate the classes
+        classmakercmd = 'classmaker'
+        if sys.platform == 'win32':
+            classmakercmd = 'classmaker.exe'
+
+        # Run using cmd in path, unless we are inside the tree
+        if os.path.isfile(os.path.join(self.dir,'../../apps/classmaker/',classmakercmd)):
+            if sys.platform != 'win32':
+                classmakercmd = './' + classmakercmd
+            classmakercmd = 'cd ../../apps/classmaker && ' + classmakercmd
+        return classmakercmd
+        
+    def build_run(self):
+        self.run_cmd( self.get_command() + " -s " + self.Schema + " -o " + self.dir, shell=True )
 
 argv = sys.argv
 
@@ -807,3 +908,9 @@ def build():
             pf.close()
             print "Exiting"
             sys.exit(1)
+
+    if '--write-installers-file' in Args:
+        f = open('new_installers.pickle','wb')
+        cPickle.dump(Generated_Installers,f)
+        f.close()
+

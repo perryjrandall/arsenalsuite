@@ -106,9 +106,9 @@ include( "idle/idle.pri" )
 # Python modules
 debug:win32 {
     LIBS+=-LsipBurner -lBurner
-    LIBS+=-L../../lib/classes/sipClasses -lpyClasses
-    LIBS+=-L../../lib/stone/sipStone -lpyStone
-    LIBS+=-L../../lib/sip/siplib -lsip
+    LIBS+=-L../../lib/classes/sipClasses -lpyClasses_d
+    LIBS+=-L../../lib/stone/sipStone -lpyStone_d
+    LIBS+=-L../../lib/sip/siplib -lsip_d
 } else {
     LIBS+=-LsipBurner -lBurner
     win32 {
@@ -118,7 +118,7 @@ debug:win32 {
     }
 }
 
- # Stone and classes
+# Stone and classes
 LIBS+=-L../../lib/stonegui -lstonegui
 LIBS+=-L../../lib/classes -lclasses
 LIBS+=-L../../lib/stone -lstone
@@ -131,7 +131,7 @@ win32 {
 	INCLUDEPATH+=$$system("python -c \"from distutils.sysconfig import get_python_inc; print get_python_inc()\"")
 	PY_VERSION=$$system("python -c \"from distutils.sysconfig import get_python_version; print get_python_version().replace('.','')\"")
 	message(Python Version is $$PY_VERSION Python lib path is $$PY_LIB_PATH)
-	LIBS+=-L$${PY_PATH}\libs -lpython$${PY_VERSION}
+	LIBS+=-L$${PY_PATH}\\libs -lpython$${PY_VERSION}
 	LIBS += -lpsapi -lMpr -lws2_32 -lgdi32
 }
 
