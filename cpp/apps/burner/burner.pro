@@ -106,9 +106,9 @@ include( "idle/idle.pri" )
 # Python modules
 debug:win32 {
     LIBS+=-LsipBurner -lBurner
-    LIBS+=-L../../lib/classes/sipClasses -lpyClasses
-    LIBS+=-L../../lib/stone/sipStone -lpyStone
-    LIBS+=-L../../lib/sip/siplib -lsip
+    LIBS+=-L../../lib/classes/sipClasses -lpyClasses_d
+    LIBS+=-L../../lib/stone/sipStone -lpyStone_d
+    LIBS+=-L../../lib/sip/siplib -lsip_d
 } else {
     LIBS+=-LsipBurner -lBurner
     win32 {
@@ -118,7 +118,7 @@ debug:win32 {
     }
 }
 
- # Stone and classes
+# Stone and classes
 LIBS+=-L../../lib/stonegui -lstonegui
 LIBS+=-L../../lib/classes -lclasses
 LIBS+=-L../../lib/stone -lstone
