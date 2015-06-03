@@ -15,7 +15,10 @@ if sys.platform=="linux2":
 
 # Python module target
 pc = SipTarget("pyabsubmit",path)
-pc.pre_deps = ["libabsubmit","pyclasses:install"]
+if os.name == 'nt':
+    pc.pre_deps = ["libabsubmit","pyclassesstatic:install"]
+else:
+    pc.pre_deps = ["libabsubmit","pyclasses:install"]
 
 pcs = SipTarget("pyabsubmitstatic",path,True)
 pcs.pre_deps = ["libabsubmit", "pyclassesstatic:install"]

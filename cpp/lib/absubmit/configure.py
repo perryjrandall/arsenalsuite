@@ -93,7 +93,7 @@ def doit():
 	# specific prefixes or extensions (e.g. the "lib" prefix on UNIX, or the
 	# ".dll" extension on Windows).
 	if sys.platform == "win32":
-		makefile.extra_libs = ["absubmit","classes","stone","QtSql4","QtXml4","QtNetwork4","absubmit","Mpr"]
+		makefile.extra_libs = ["absubmit","classes","stone","QtSql4","QtXml4","QtNetwork4","Mpr"]
 	elif sys.platform == "darwin":
 		makefile.extra_libs = ["absubmit","classes","stone","absubmit"]
 	else:

@@ -330,6 +330,13 @@ class SipTarget(Target):
             self.CleanDone = True
             self.built = False
             self.InstallDone = False
+            if os.name == 'nt':
+                wantedName = self.name.replace("static","").replace("py","",1)
+                print "Cleaning sip working dir"
+                if os.path.isfile('sip' + wantedName + '/' + wantedName + '.lib'):
+                    os.remove('sip' + wantedName + '/' + wantedName + '.lib')
+                if os.path.isfile('sip' + wantedName + '/py' + wantedName + '.lib'):
+                    os.remove('sip' + wantedName + '/py' + wantedName + '.lib')
         if self.has_arg('build'):
             self.run_make()
             self.built = True
@@ -338,6 +345,8 @@ class SipTarget(Target):
                 print "Checking for the existance of (%s)" % ('sip' + wantedName + '/' + wantedName + '.lib')
                 if os.path.isfile('sip' + wantedName + '/' + wantedName + '.lib'):
                     os.remove('sip' + wantedName + '/' + wantedName + '.lib')
+                if os.path.isfile('sip' + wantedName + '/py' + wantedName + '.lib'):
+                    os.remove('sip' + wantedName + '/py' + wantedName + '.lib')
         if self.has_arg('install') and not self.InstallDone:
             cmd = 'install'
             try:
