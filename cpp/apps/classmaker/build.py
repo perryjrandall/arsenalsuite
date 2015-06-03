@@ -19,7 +19,9 @@ if sys.platform == 'win32':
 #svn = WCRevTarget("classmakersvnrev",path,rev_path,"src/svnrev-template.h","src/svnrev.h")
 #svnnsi = WCRevTarget("classmakersvnrevnsi",path,rev_path,"classmaker-svnrev-template.nsi","classmaker-svnrev.nsi")
 #svntxt = WCRevTarget("classmakersvnrevtxt",path,rev_path,"classmaker_version_template.txt","classmaker_version.txt");
+kt = KillTarget("classmakerkill", path, ["classmaker.exe"])
 nsi = NSISTarget("classmaker_installer",path,"classmaker.nsi")
+nsi.pre_deps = ["classmakerkill"]
 
 QMakeTarget("classmaker",path,"classmaker.pro", pre_deps,[nsi])
 

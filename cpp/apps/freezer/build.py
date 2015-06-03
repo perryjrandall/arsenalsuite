@@ -19,7 +19,9 @@ else:
 	instPrefix = destDir + "/arsenalsuite/freezer/"
 	
 ini = IniConfigTarget("freezerini",path,'freezer.ini.template','freezer.ini',instPrefix)
+kt = KillTarget("freezerkill", path, ["af.exe"])
 nsi = NSISTarget("freezer_installer",path,"freezer.nsi")
+nsi.pre_deps = ['freezerkill']
 
 # Use Static python modules on windows
 deps = None

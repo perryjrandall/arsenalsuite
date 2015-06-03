@@ -19,8 +19,6 @@ Page instfiles
 #SilentInstall silent
 
 Section "install"
-    Processes::KillProcess "abpsmon.exe"
-	Processes::KillProcess "burner.exe"
 	StrCmp $R0 "0" skipsleep
 	Sleep 3000
 	skipsleep:
