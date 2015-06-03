@@ -19,8 +19,8 @@ win32 {
 	PY_PATH=$$system("python -c \"from distutils.sysconfig import get_config_vars; print get_config_vars()['prefix']\"")
 	INCLUDEPATH+=$$system("python -c \"from distutils.sysconfig import get_python_inc; print get_python_inc()\"")
 	PY_VERSION=$$system("python -c \"from distutils.sysconfig import get_python_version; print get_python_version().replace('.','')\"")
-	message(Python Version is $$PY_VERSION Python lib path is $$PY_PATH\libs)
-	LIBS+=-L$${PY_PATH}\libs -lpython$${PY_VERSION}
+	message(Python Version is $$PY_VERSION Python lib path is $$PY_PATH\\libs)
+	LIBS+=-L$${PY_PATH}\\libs -lpython$${PY_VERSION}
 }
 
 unix {

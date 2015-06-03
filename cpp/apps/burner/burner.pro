@@ -131,7 +131,7 @@ win32 {
 	INCLUDEPATH+=$$system("python -c \"from distutils.sysconfig import get_python_inc; print get_python_inc()\"")
 	PY_VERSION=$$system("python -c \"from distutils.sysconfig import get_python_version; print get_python_version().replace('.','')\"")
 	message(Python Version is $$PY_VERSION Python lib path is $$PY_LIB_PATH)
-	LIBS+=-L$${PY_PATH}\libs -lpython$${PY_VERSION}
+	LIBS+=-L$${PY_PATH}\\libs -lpython$${PY_VERSION}
 	LIBS += -lpsapi -lMpr -lws2_32 -lgdi32
 }
 

@@ -115,7 +115,7 @@ DEPENDPATH+=src include ui
 
 win32 {
 	LIBS += -lPsapi -lMpr -ladvapi32 
-	LIBS+=-Lc:\IntelLib
+	LIBS+=-Lc:\\IntelLib
 	LIBS+=-L../stone -lstone
 }
 

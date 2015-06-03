@@ -183,10 +183,10 @@ DEPENDPATH+=src ui
 
 win32 {
 	LIBS += -lPsapi -lMpr -ladvapi32 -lshell32
-	LIBS+=-Lc:\IntelLib
-	LIBS+=-L..\classes -lclasses
-	LIBS+=-L..\stonegui -lstonegui
-	LIBS+=-L..\stone -lstone
+	LIBS+=-Lc:\\IntelLib
+	LIBS+=-L..\\classes -lclasses
+	LIBS+=-L..\\stonegui -lstonegui
+	LIBS+=-L..\\stone -lstone
 }
 
 unix {

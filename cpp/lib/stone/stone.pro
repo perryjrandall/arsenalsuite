@@ -97,12 +97,12 @@ DEFINES+=STONE_MAKE_DLL
 
 win32 {
 	LIBS+=-lPsapi -lMpr -ladvapi32 -lshell32 -luser32 -lpdh -lUserenv -lnetapi32 -lGdi32
-	LIBS+=-Lc:\IntelLib
+	LIBS+=-Lc:\\IntelLib
 	PY_PATH=$$system("python -c \"from distutils.sysconfig import get_config_vars; print get_config_vars()['prefix']\"")
 	INCLUDEPATH+=$$system("python -c \"from distutils.sysconfig import get_python_inc; print get_python_inc()\"")
 	PY_VERSION=$$system("python -c \"from distutils.sysconfig import get_python_version; print get_python_version().replace('.','')\"")
-	message(Python Version is $$PY_VERSION Python lib path is $${PY_PATH}\libs)
-	LIBS+=-L$${PY_PATH}\libs -lpython$${PY_VERSION}
+	message(Python Version is $$PY_VERSION Python lib path is $${PY_PATH}\\libs)
+	LIBS+=-L$${PY_PATH}\\libs -lpython$${PY_VERSION}
 
 	#QMAKE_CXXFLAGS+=/Z7
 	#QMAKE_LFLAGS+=/DEBUG
