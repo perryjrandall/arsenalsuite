@@ -25,6 +25,8 @@
  * $Id$
  */
 
+#include "Python.h"
+
 #include <qdatetime.h>
 #include <qsqldatabase.h>
 #include <qsqldriver.h>
@@ -41,9 +43,11 @@
 
 #include "connection.h"
 #include "database.h"
+#include "expression.h"
 #include "iniconfig.h"
 #include "sqlerrorhandler.h"
 #include "pgconnection.h"
+#include "pyembed.h"
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -52,6 +56,30 @@
 #endif
 
 namespace Stone {
+
+SqlException::SqlException( const QString & sql, const QString & error )
+: mSql(sql)
+, mError(error)
+{}
+
+QString SqlException::sql() const
+{ return mSql; }
+
+QString SqlException::error() const
+{ return mError; }
+
+const char * SqlException::what() const throw()
+{
+	if( mCString.isNull() )
+		mCString = QString("%1: %2").arg(mError).arg(mSql).toUtf8();
+	return mCString.constData();
+}
+
+LostConnectionException::LostConnectionException()
+{}
+
+const char * LostConnectionException::what() const throw()
+{ return "Lost Connection"; }
 
 Connection::Connection(QObject * parent)
 : QObject( parent )
@@ -127,6 +155,7 @@ void Connection::setOptionsFromIni( const IniConfig & cfg )
 	setPassword( cfg.readString( "Password" ) );
 	setReconnectDelay( cfg.readInt( "ReconnectDelay", 30 ) );
 	setMaxConnectionAttempts( cfg.readInt( "MaxConnectionAttempts", -1 ) );
+	mPythonStackTraceOnTables = cfg.readString( "PythonStackTraceOnTables" ).split(",",QString::SkipEmptyParts);
 }
 
 bool Connection::checkConnection()
@@ -149,6 +178,7 @@ static int qSqlConnNumber()
 }
 
 QSqlDbConnection::QSqlDbConnection( const QString & driverName )
+: mInsideTransaction( false )
 {
 	mDb = QSqlDatabase::addDatabase( driverName, "QSqlDbConnection" + QString::number(qSqlConnNumber()) );
 }
@@ -263,76 +293,203 @@ bool QSqlDbConnection::exec( QSqlQuery & query, bool reExecLostConn, Table * tab
 {
 	bool result = false;
 	int queryType = getQueryType( query );
-	do {
-		// If gui dialog is connected to the connectionLost signal
-		// then it will block in checkConnection until a connection
-		// is made(or the user quits the app).
-		if( isConnected() || (((mMaxConnectionAttempts < 0) || (mConnectionAttempts < mMaxConnectionAttempts)) && checkConnection()) ) {
-			QTime time;
-			time.start();
-#ifndef Q_OS_WIN
-			if( usingFakePrepareHack ) {
-				QSqlResult * qsr = (QSqlResult*)query.result();
-			    qsr->resetBindCount();
+	if( table && mPythonStackTraceOnTables.contains(table->tableName().toLower()) ) {
+		printPythonStackTrace();
+		LOG_1("ThrowOnTables contains " + table->tableName().toLower() +":\n" + query.lastQuery().simplified() );
+               //throw SqlException( query.lastQuery().simplified(), "ThrowOnTables contains " + table->tableName().toLower() );
+       }
 
-				if (qsr->lastError().isValid())
-					qsr->setLastError(QSqlError());
+       PyThreadState *_save = 0;
+       if( Py_IsInitialized() && PyEval_ThreadsInitialized() && PyGILState_GetThisThreadState() )
+               _save = PyEval_SaveThread();
 
-				result = qsr->QSqlResult::exec();
-			} else
-#endif
-				result = query.exec();
-			
-			if( result ) {
-				if( table )
-					table->addSqlTime( time.elapsed(), queryType );
-	
-				Database * db = table ? table->database() : Database::current();
-				if( queryType > 0 && db && (db->echoMode() & queryType) ) {
-					LOG_3( query.executedQuery() + boundValueString(query) );
+       try {
+               do {
+                       // If gui dialog is connected to the connectionLost signal
+                       // then it will block in checkConnection until a connection
+                       // is made(or the user quits the app).
+                       if( isConnected() || (((mMaxConnectionAttempts < 0) || (mConnectionAttempts < mMaxConnectionAttempts)) && checkConnection()) ) {
+                               QTime time;
+                               time.start();
+       #ifndef Q_OS_WIN
+                               if( usingFakePrepareHack ) {
+                                       QSqlResult * qsr = (QSqlResult*)query.result();
+                                       qsr->resetBindCount();
+
+                                       if (qsr->lastError().isValid())
+                                               qsr->setLastError(QSqlError());
+
+                                       result = qsr->QSqlResult::exec();
+                               } else
+       #endif
+                                       result = query.exec();
+
+                               if( result ) {
+                                       if( table )
+                                               table->addSqlTime( time.elapsed(), queryType );
+
+                                       Database * db = table ? table->database() : Database::current();
+                                       if( queryType > 0 && db && (db->echoMode() & queryType) ) {
+                                               LOG_3( query.executedQuery() + boundValueString(query) );
+                                       }
+                                       break;
+                               } else {
+                                       QSqlError error = query.lastError();
+                                       if( !isConnected() || isConnectionError(error) ) {
+                                               LOG_1( "Connection Error During " + queryNameFromType( queryType ) + (reExecLostConn ? (", retrying") : QString()) );
+                                               if( mInsideTransaction ) {
+                                                       throw LostConnectionException();
+                                               }
+                                               reconnect();
+                                               continue;
+                                       }
+                                       mLastErrorText = query.executedQuery() + "\n" + error.text();
+                                       LOG_1( mLastErrorText );
+                                       SqlErrorHandler::instance()->handleError( mLastErrorText );
+                                       throw SqlException(query.executedQuery(), mLastErrorText);
+                                       break;
 				}
-				break;
 			} else {
-				if( !isConnected() || isConnectionError(query.lastError() ) ) {
-					LOG_1( "Connection Error During " + queryNameFromType( queryType ) + (reExecLostConn ? (", retrying") : QString()) );
-					reconnect();
-					continue;
-				}
-				mLastErrorText = query.executedQuery() + "\n" + query.lastError().text();
-				LOG_1( mLastErrorText );
-				SqlErrorHandler::instance()->handleError( mLastErrorText );
-				break;
+				if( mMaxConnectionAttempts >= 0 && mConnectionAttempts++ >= mMaxConnectionAttempts )
+					break;
+				QDateTime now = QDateTime::currentDateTime();
+				do {
+                                       // This will only happen in a non-gui application, otherwise the lost connection
+                                       // dialog in stonegui will enter it's event look inside the check connection call above.
+                                       QTime t;
+                                       t.start();
+                                       QCoreApplication::instance()->processEvents( QEventLoop::WaitForMoreEvents, 50 );
+                                       if( t.elapsed() < 50 ) {
+                                               //LOG_5( "QApplication::processEvents returned before the timeout period, we must be outside the event loop" );
+#ifdef Q_OS_WIN
+                                               Sleep( 1000 );
+#else
+                                               sleep( 1 );
+#endif
+					}
+				} while( now.secsTo( QDateTime::currentDateTime() ) < mReconnectDelay );
 			}
-		} else {
-			LOG_5( "Here2" );
-			if( mMaxConnectionAttempts >= 0 && mConnectionAttempts++ >= mMaxConnectionAttempts )
-				break;
-			QDateTime now = QDateTime::currentDateTime();
-			do {
-				// This will only happen in a non-gui application, otherwise the lost connection
-				// dialog in stonegui will enter it's event look inside the check connection call above.
-				QTime t;
-				t.start();
-				QCoreApplication::instance()->processEvents( QEventLoop::WaitForMoreEvents, 50 );
-				if( t.elapsed() < 50 ) {
-					//LOG_5( "QApplication::processEvents returned before the timeout period, we must be outside the event loop" );
-					#ifdef Q_OS_WIN
-					Sleep( 1000 );
-					#else
-					sleep( 1 );
-					#endif
-				}
-			} while( now.secsTo( QDateTime::currentDateTime() ) < mReconnectDelay );
-			LOG_5( "Here3" );
+		} while( reExecLostConn );
+
+		if( _save ) {
+			PyEval_RestoreThread(_save);
+			_save = 0;
 		}
-	} while( reExecLostConn );
+	} catch (...) {
+		if( _save )
+			PyEval_RestoreThread(_save);
+		throw;
+	}
+
 	return result;
 }
+
+RecordList Connection::executeExpression( Table * table, FieldList fields, const Expression & exp )
+{
+	RecordList ret;
+	
+	QSqlQuery sq = exec( exp.toString(Expression::QueryString), QList<QVariant>(), true /*retry*/, table );
+	while( sq.next() )
+		ret += Record( new RecordImp( table, sq, 0, &fields ), false );
+	return ret;
+}
+
+QMap<Table*,RecordList> Connection::executeExpression( Table * table, const RecordReturn & rr, const Expression & exp )
+{
+	Schema * schema = table->schema()->schema();
+	QSqlQuery sq = exec( exp.toString(Expression::QueryString), QList<QVariant>(), true /*retry*/, table );
+	QMap<Table*,RecordList> ret;
+	while( sq.next() ) {
+		Table * t = rr.table;
+		if( rr.tableOidPos >= 0 ) {
+			TableSchema * ts = tableByOid( sq.value(rr.tableOidPos).toUInt(), schema );
+			if( ts )
+				t = ts->table();
+			else {
+				LOG_1( "Unable to load record without table" );
+				continue;
+			}
+		}
+		if( t ) {
+			QMap<Table*,QVector<int> >::const_iterator it = rr.columnPositions.find(t);
+			if( it != rr.columnPositions.end() )
+				ret[t] += Record( new RecordImp( t, sq, *it ), false );
+		}
+	}
+	return ret;
+}
+
+TableSchema * Connection::tableByOid( uint oid, Schema * )
+{
+	return 0;
+}
+
+uint Connection::oidByTable( TableSchema * )
+{
+	return -1;
+}
+
+
+QStringList Connection::pythonStackTraceOnTables() const
+{
+	return mPythonStackTraceOnTables;
+}
+
+void Connection::setPythonStackTraceOnTables( const QStringList & tables )
+{
+	mPythonStackTraceOnTables = tables;
+}
+
+void Connection::addPythonStackTraceOnTable( const QString & tableName )
+{
+	if( !mPythonStackTraceOnTables.contains(tableName) )
+		mPythonStackTraceOnTables.append(tableName);
+}
+
+void Connection::removePythonStackTraceOnTable( const QString & tableName )
+{
+	mPythonStackTraceOnTables.removeAll(tableName);
+}
+
+
+#if 0
+QList<RecordList> Connection::executeExpression( Table * table, QList<RecordReturn> rrl, const Expression & exp )
+{
+	Schema * schema = table->schema()->schema();
+	QList<RecordList> ret;
+	while(ret.size()) < rrl.size()) ret.append(RecordList());
+	
+	QSqlQuery sq = exec( exp.toString(Expression::QueryString), QList<QVariant>(), true /*retry*/, table );
+	while( sq.next() ) {
+		int retCol = 0;
+		foreach( const RecordReturn & rr, rrl ) {
+			Table * t = rr.table;
+			if( rr.tableOidPos >= 0 ) {
+				TableSchema * ts = tableByOid( sq.value(rr.tableOidPos).toUInt(), schema );
+				if( ts )
+					t = ts->table();
+				else {
+					LOG_1( "Unable to load record without table" );
+					continue;
+				}
+			}
+			if( t ) {
+				QMap<Table*,QVector<int> >::iterator it = rr.columnPositions.find(t);
+				if( it != rr.columnPositions.end() )
+					ret[retCol] += Record( new RecordImp( t, sq, *it ), false );
+			}
+			retCol++;
+		}
+	}
+	return ret;
+}
+#endif
 
 bool QSqlDbConnection::reconnect()
 {
 	if( mDb.isOpen() )
 		mDb.close();
+	mInsideTransaction = false;
 	mDb.setHostName( mHost );
 	mDb.setPort( mPort );
 	mDb.setDatabaseName( mDatabaseName );
@@ -355,6 +512,12 @@ bool QSqlDbConnection::isConnected()
 	return mDb.isOpen();
 }
 
+bool QSqlDbConnection::closeConnection()
+{
+	mDb.close();
+	return true;
+}
+
 QString QSqlDbConnection::connectString()
 {
 	return "Host: " + mDb.hostName() + " Port: " + QString::number(mDb.port()) + " Database: " + mDb.databaseName() + " User: " + mDb.userName() + " Options: " + mDb.connectOptions();
@@ -365,24 +528,43 @@ bool QSqlDbConnection::isConnectionError( const QSqlError & e )
 	if( e.type() == QSqlError::ConnectionError
 		|| e.databaseText().contains( "server closed the connection" )
 		|| e.databaseText().contains( "Software caused connection abort" )
-		|| e.databaseText().contains( "Connection timed out" ) )
+		|| e.databaseText().contains( "Connection timed out" )
+		// Seems that connection errors sometimes give no database text, just Unable to create query
+		|| (e.databaseText().isEmpty() && e.driverText().contains( "Unable to create query" )) )
 		return true;
 	return false;
 }
 
 bool QSqlDbConnection::beginTransaction()
 {
-	return mDb.transaction();
+	Database * db = Database::current();
+	if( db && (db->echoMode() & (Database::EchoInsert | Database::EchoUpdate | Database::EchoDelete) ) )
+		LOG_3( "BEGIN;" );
+	
+	return (mInsideTransaction = mDb.transaction());
 }
 
 bool QSqlDbConnection::commitTransaction()
 {
+	Database * db = Database::current();
+	if( db && (db->echoMode() & (Database::EchoInsert | Database::EchoUpdate | Database::EchoDelete) ) )
+		LOG_3( "COMMIT;" );
+	mInsideTransaction = false;
 	return mDb.commit();
 }
 
 bool QSqlDbConnection::rollbackTransaction()
 {
+	Database * db = Database::current();
+	if( db && (db->echoMode() & (Database::EchoInsert | Database::EchoUpdate | Database::EchoDelete) ) )
+		LOG_3( "ROLLBACK;" );
+	mInsideTransaction = false;
 	return mDb.rollback();
+}
+
+void QSqlDbConnection::listen( const QString & notificationName )
+{
+	mDb.driver()->subscribeToNotification(notificationName);
 }
 
 } //namespace

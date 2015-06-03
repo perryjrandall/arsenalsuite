@@ -35,6 +35,29 @@
 #include "interval.h"
 #include "tableschema.h"
 
+PythonException::PythonException()
+: type(0)
+, value(0)
+, traceback(0)
+{
+	SIP_BLOCK_THREADS
+	PyErr_Fetch(&type, &value, &traceback);
+	SIP_UNBLOCK_THREADS
+}
+
+PythonException::~PythonException() throw()
+{
+	Py_XDECREF(type);
+	Py_XDECREF(value);
+	Py_XDECREF(traceback);
+}
+
+void PythonException::restore()
+{
+	PyErr_Restore(type, value, traceback);
+	type = value = traceback = 0;
+}
+
 static inline void ensurePythonInitialized()
 {
 	if( ! Py_IsInitialized() )
@@ -59,15 +82,23 @@ const sipAPIDef * getSipAPI()
 	} else {
 
 		PyObject * sip_capiobj = PyDict_GetItemString(PyModule_GetDict(sip_sipmod),"_C_API");
+#if defined(SIP_USE_PYCAPSULE)
+		if (sip_capiobj == NULL || !PyCapsule_CheckExact(sip_capiobj))
+#else
 		if (sip_capiobj == NULL || !PyCObject_Check(sip_capiobj))
-			LOG_3( "getSipAPI: Unable to find _C_API object from sip modules dictionary" );
+#endif
+			LOG_3( QString("getSipAPI: Unable to find _C_API object from sip modules dictionary: Got 0x%1").arg((qulonglong)sip_capiobj,0,16) );
 		else
+#if defined(SIP_USE_PYCAPSULE)
+			api = reinterpret_cast<const sipAPIDef *>(PyCapsule_GetPointer(sip_capiobj, SIP_MODULE_NAME "._C_API"));
+#else
 			api = reinterpret_cast<const sipAPIDef *>(PyCObject_AsVoidPtr(sip_capiobj));
+#endif
 	}
     SIP_UNBLOCK_THREADS
 	return api;
 }
-
+/*
 sipExportedModuleDef * getSipModule( const char * name )
 {
 	const sipAPIDef * api = getSipAPI();
@@ -78,9 +109,10 @@ sipExportedModuleDef * getSipModule( const char * name )
 		LOG_5( "getSipModule: Unable to lookup module " + QString::fromLatin1(name) + " using api_find_module" );
 	return module;
 }
-
-sipTypeDef * getSipType( const char * module_name, const char * typeName )
+*/
+sipTypeDef * getSipType( const char * /*module_name*/, const char * typeName )
 {
+	/*
 	sipExportedModuleDef * module = getSipModule(module_name);
 	if( !module ) return 0;
 
@@ -90,9 +122,11 @@ sipTypeDef * getSipType( const char * module_name, const char * typeName )
 		if( //strcmp( type->td_name, typeName ) == 0 ||
 			 ( strcmp( sipNameFromPool( type->td_module, type->td_cname ), typeName ) == 0 ) )
 			return type;
-	}
+	}*/
+	const sipTypeDef * type = getSipAPI()->api_find_type(typeName);
+	if( type ) return const_cast<sipTypeDef*>(type);
 
-	LOG_5( "getSipType: Unabled to find " + QString::fromLatin1(typeName) + " in module " + QString::fromLatin1(module_name) );
+	LOG_5( "getSipType: Unabled to find " + QString::fromLatin1(typeName) );// + " in module " + QString::fromLatin1(module_name) );
 	return 0;
 }
 
@@ -215,17 +249,17 @@ static sipTypeDef * sipQVariantType()
 static sipTypeDef * sipIntervalType()
 { static sipTypeDef * sIntervalW = 0; if( !sIntervalW ) sIntervalW = getSipType("blur.Stone", "Interval"); return sIntervalW; }
 
-sipTypeDef * getRecordType( const char * module, const QString & className )
+sipTypeDef * getRecordType( const char * module, const char * className )
 {
+	/*
 	QString hash = QString::fromLatin1(module) + "." + className;
 	static QHash<QString,sipTypeDef*> sipTypeHash;
 	
 	QHash<QString,sipTypeDef*>::iterator it = sipTypeHash.find( hash );
 	if( it != sipTypeHash.end() )
 		return it.value();
-	
-	sipTypeDef * ret = getSipType(module,className.toLatin1().constData());
-	sipTypeHash.insert( hash, ret );
+	*/
+	sipTypeDef * ret = getSipType(module,className);
 	return ret;
 }
 
@@ -242,35 +276,42 @@ PyObject * getClassObject( PyObject * pyObject )
 }
 
 // Returns a BORROWED reference
-PyObject * getPythonRecordClass()
+PyObject * getPythonClass( const char * moduleName, const char * typeName )
 {
 	PyObject * ret = 0;
 	ensurePythonInitialized();
 	// Return a NEW reference
 	SIP_BLOCK_THREADS
-	PyObject * module = PyImport_ImportModule( "blur.Stone" );
+	PyObject * module = PyImport_ImportModule( (char*)moduleName );
 	if( !module ) {
-		LOG_1( "getPythonRecordClass: Unable to load blur.Stone module" );
+		LOG_1( "getPythonRecordClass: Unable to load " + QString::fromLatin1(moduleName) + " module" );
 	} else {
 
 		// Returns a BORROWED reference
 		PyObject * moduleDict = PyModule_GetDict( module );
 		Py_DECREF(module);
 		if( !moduleDict ) {
-			LOG_1( "getPythonRecordClass: Unable to get dict for blur.Stone module" );
+			LOG_1( "getPythonRecordClass: Unable to get dict for " + QString::fromLatin1(moduleName) + " module" );
 		} else
 			// Returns a BORROWED reference
-			ret = PyDict_GetItemString( moduleDict, "Record" );
+			ret = PyDict_GetItemString( moduleDict, typeName );
 	}
 	SIP_UNBLOCK_THREADS
 	return ret;
+}
+
+// Returns a BORROWED reference
+PyObject * getPythonRecordClass()
+{
+	return getPythonClass( "blur.Stone", "Record" );
 }
 
 PyObject * sipWrapRecord( Record * r, bool makeCopy, TableSchema * defaultType )
 {
 	PyObject * ret = 0;
 	// First we convert to Record using sip methods
-	sipTypeDef * type = getRecordType( "blur.Stone", "Record" );
+	static sipTypeDef * recordType = getRecordType( "blur.Stone", "Record" );
+	sipTypeDef * type = recordType;
 	if( type ) {
 		if( makeCopy )
 			ret = getSipAPI()->api_convert_from_new_type( new Record(*r), type, NULL );
@@ -335,8 +376,9 @@ PyObject * sipWrapRecord( Record * r, bool makeCopy, TableSchema * defaultType )
 PyObject * sipWrapRecordList( RecordList * rl, bool makeCopy, TableSchema * defaultType, bool allowUpcasting )
 {
 	PyObject * ret = 0;
+	static sipTypeDef * recordType = getRecordType( "blur.Stone", "RecordList" );
 	// First we convert to Record using sip methods
-	sipTypeDef * type = getRecordType( "blur.Stone", "RecordList" );
+	sipTypeDef * type = recordType;
 	if( type ) {
 		if( makeCopy )
 			ret = getSipAPI()->api_convert_from_new_type( new RecordList(*rl), type, NULL );
@@ -423,7 +465,7 @@ RecordList recordListFromPyList( PyObject * a0 )
 	return ret;
 }
 
-PyObject * recordListGroupByCallable( RecordList * rl, PyObject * callable, TableSchema * defaultType )
+PyObject * recordListGroupByCallable( const RecordList * rl, PyObject * callable, TableSchema * defaultType )
 {
 	PyObject *d = PyDict_New();
 
@@ -431,7 +473,7 @@ PyObject * recordListGroupByCallable( RecordList * rl, PyObject * callable, Tabl
 		return NULL;
 	
 	bool error = false;
-	sipTypeDef * rl_type = getRecordType( "blur.Stone", "RecordList" );
+	static sipTypeDef * rl_type = getRecordType( "blur.Stone", "RecordList" );
 	
 	foreach( Record r, *rl ) {
 		PyObject * py_r = sipWrapRecord( &r );
@@ -487,7 +529,7 @@ bool isPythonRecordInstance( PyObject * pyObject )
 
 Record sipUnwrapRecord( PyObject * pyObject )
 {
-	sipTypeDef * sipRecordType = getRecordType( "blur.Stone", "Record" );
+	static sipTypeDef * sipRecordType = getRecordType( "blur.Stone", "Record" );
 	Record ret;
 	SIP_BLOCK_THREADS
 	if( getSipAPI()->api_can_convert_to_type( pyObject, sipRecordType, 0 ) ) {
@@ -1029,3 +1071,21 @@ QString pythonExceptionTraceback( bool clearException )
 
 	return ret;
 }
+
+void printPythonStackTrace()
+{
+	SIP_BLOCK_THREADS
+	PyObject * traceback_module = PyImport_ImportModule("traceback");
+	if (traceback_module) {
+
+		/* Call the traceback module's format_exception function, which returns a list */
+		PyObject * ret = PyObject_CallMethod(traceback_module, "print_stack","");
+		if( !ret ) {
+			LOG_1( pythonExceptionTraceback(true) );
+		}
+		Py_XDECREF(ret);
+	} else
+		LOG_1( "Unable to load the traceback module, can't get exception text" );
+	SIP_UNBLOCK_THREADS
+}
+

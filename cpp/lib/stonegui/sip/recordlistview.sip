@@ -9,6 +9,8 @@ public:
 	RecordListView( QWidget * parent /TransferThis/ );
 
 	RecordSuperModel * model() const;
+	
+	void setModel(RecordSuperModel *);
 
 	Record current();
 

@@ -349,6 +349,7 @@ void RecordSuperModel::updateRecords( RecordList newRecords, const QModelIndex &
 		append( toAdd, parent );
 	} else
 		append( newRecords, parent );
+	checkAutoSort(parent);
 }
 
 void RecordSuperModel::remove( RecordList rl, bool recursive, const QModelIndex & parent )
@@ -366,7 +367,7 @@ QModelIndex RecordSuperModel::append( const Record & r, const QModelIndex & pare
 
 QModelIndexList RecordSuperModel::append( RecordList rl, const QModelIndex & parent, RecordDataTranslatorInterface * trans )
 {
-    return insert( rl, childrenLoaded(parent) ? rowCount(parent) : 0, parent, trans );
+	return insert( rl, childrenLoaded(parent) ? rowCount(parent) : 0, parent, trans );
 }
 
 void RecordSuperModel::updated( RecordList rl, bool recursive, const QModelIndex & parentIndex, bool loadChildren )

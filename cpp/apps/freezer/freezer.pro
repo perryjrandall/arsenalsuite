@@ -22,16 +22,16 @@ win32{
 	INCLUDEPATH+=$$system("python -c \"from distutils.sysconfig import get_python_inc; print get_python_inc()\"")
 	PY_VERSION=$$system("python -c \"from distutils.sysconfig import get_python_version; print get_python_version().replace('.','')\"")
 	message(Python Version is $$PY_VERSION Python lib path is $$PY_LIB_PATH)
-	LIBS+=-L$${PY_PATH}\libs -lpython$${PY_VERSION}
+	LIBS+=-L$${PY_PATH}\\libs -lpython$${PY_VERSION}
 	LIBS += -lpsapi -lMpr -lws2_32 -lgdi32
 
-	LIBS+=-L..\..\lib\freezer -lfreezer
-	LIBS+=-L..\..\lib\classesui -lclassesui
-	LIBS+=-L..\..\lib\stonegui -lstonegui
-	LIBS+=-L..\..\lib\classes -lclasses
-	LIBS+=-L..\..\lib\stone -lstone
+	LIBS+=-L..\\..\\lib\\freezer -lfreezer
+	LIBS+=-L..\\..\\lib\\classesui -lclassesui
+	LIBS+=-L..\\..\\lib\\stonegui -lstonegui
+	LIBS+=-L..\\..\\lib\\classes -lclasses
+	LIBS+=-L..\\..\\lib\\stone -lstone
 
-	INCLUDEPATH+=c:\nvidia\cg\include
+	INCLUDEPATH+=c:\\nvidia\\cg\\include
 	LIBS+=-lpsapi -lMpr
 	LIBS+=-lws2_32
 	LIBS+=-lopengl32
@@ -50,26 +50,49 @@ unix{
 	LIBS+=-L../../lib/absubmit -labsubmit
 	LIBS+=-lutil
 
-	unix: LIBS+=-L$$(MAGICK_ROOT)/lib
-	unix: LIBS+=-Wl,-rpath,$$(MAGICK_ROOT)/lib
-
-    LIBS+=-lMagick++
-
 	PY_VERSION=$$system($$PYTHON " -c \"from distutils.sysconfig import get_python_version; print get_python_version()\"")
 	message(Python Version is $$PY_VERSION)
 	INCLUDEPATH+=$$system($$PYTHON " -c \"from distutils.sysconfig import get_python_inc; print get_python_inc()\"")
 	LIBS+=-lpython$${PY_VERSION}
+	LIBS+=-lGLU
+}
+
+#DEFINES+=USE_IMAGE_MAGICK
+contains( DEFINES, USE_IMAGE_MAGICK ) {
+	unix:LIBS+=-L$$(MAGICK_ROOT)/lib
+	unix:INCLUDEPATH+=$$(MAGICK_ROOT)/include/ImageMagick
+
+	unix:LIBS+=-Wl,-rpath,$$(MAGICK_ROOT)/lib
+
+	unix:LIBS+=-lMagick++
+
+	#macx:INCLUDEPATH+=/usr/local/include
+	#macx:LIBS+=-lMagick++
+
+	win32:LIBS+=-lMagick++
+	win32:LIBS+=-L/ImageMagick/lib
+	win32:INCLUDEPATH+=/ImageMagick/include
 }
 
 # Python modules
-win32 {
+Release:win32 {
 	LIBS+=-L../../lib/freezer/sipFreezer -lpyFreezer
 	LIBS+=-L../../lib/classes/sipClasses -lpyClasses
 	LIBS+=-L../../lib/classesui/sipClassesui -lpyClassesui
 	LIBS+=-L../../lib/stone/sipStone -lpyStone
 	LIBS+=-L../../lib/stonegui/sipStonegui -lpyStonegui
-	LIBS+=-L../../lib/absubmit/sipAbsubmit -lpyAbsubmit
+	LIBS+=-L../../lib/absubmit/sipAbsubmit -lAbsubmit
 	LIBS+=-L../../lib/sip/siplib -lsip
+}
+
+Debug:win32 {
+	LIBS+=-L../../lib/freezer/sipFreezer -lpyFreezer_d
+	LIBS+=-L../../lib/classes/sipClasses -lpyClasses_d
+	LIBS+=-L../../lib/classesui/sipClassesui -lpyClassesui_d
+	LIBS+=-L../../lib/stone/sipStone -lpyStone_d
+	LIBS+=-L../../lib/stonegui/sipStonegui -lpyStonegui_d
+	LIBS+=-L../../lib/absubmit/sipAbsubmit -lAbsubmit_d
+	LIBS+=-L../../lib/sip/siplib -lsip_d
 }
 
 macx: CONFIG-=app_bundle
@@ -77,8 +100,8 @@ QMAKE_MACOSX_DEPLOYMENT_TARGET=10.5
 
 RESOURCES+=freezer.qrc
 
-CONFIG += qt thread warn_on opengl
-QT+=opengl xml sql network
+CONFIG += qt thread warn_on opengl console
+QT+=opengl xml sql network webkit
 DESTDIR=./
 RC_FILE = freezer.rc
 TARGET=af

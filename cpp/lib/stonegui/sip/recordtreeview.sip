@@ -40,6 +40,9 @@ public:
 
 	BusyWidget * busyWidget( bool autoCreate = true );
 	
+	void setPropagateGroupSelection( bool pgs );
+	bool propagateGroupSelection() const;
+
 public slots:
 	void expandRecursive( const QModelIndex & index = QModelIndex(), int levels = -1 );
 	void sortBySelection();
