@@ -104,8 +104,8 @@ win32 {
 	message(Python Version is $$PY_VERSION Python lib path is $${PY_PATH}\\libs)
 	LIBS+=-L$${PY_PATH}\\libs -lpython$${PY_VERSION}
 
-	#QMAKE_CXXFLAGS+=/Z7
-	#QMAKE_LFLAGS+=/DEBUG
+	QMAKE_CXXFLAGS+=/Zi
+	QMAKE_LFLAGS+=/DEBUG /OPT:REF /OPT:ICF
 }
 
 unix {

@@ -187,6 +187,8 @@ win32 {
 	LIBS+=-L..\\classes -lclasses
 	LIBS+=-L..\\stonegui -lstonegui
 	LIBS+=-L..\\stone -lstone
+	QMAKE_CXXFLAGS+=/Zi
+	QMAKE_LFLAGS+=/DEBUG /OPT:REF /OPT:ICF
 }
 
 unix {

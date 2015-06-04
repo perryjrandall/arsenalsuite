@@ -53,6 +53,8 @@ unix {
 	target.path=$$(DESTDIR)/usr/local/bin
 }
 win32 {
+	QMAKE_CXXFLAGS+=/Zi
+	QMAKE_LFLAGS+=/DEBUG /OPT:REF /OPT:ICF
 	target.path=$$(DESTDIR)/blur/common
 }
 INSTALLS += target

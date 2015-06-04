@@ -377,7 +377,9 @@ bool QSqlDbConnection::exec( QSqlQuery & query, bool reExecLostConn, Table * tab
 		}
 	} catch (...) {
 		if( _save )
+		{
 			PyEval_RestoreThread(_save);
+		}
 		throw;
 	}
 
