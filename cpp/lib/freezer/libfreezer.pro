@@ -176,6 +176,8 @@ win32 {
 	LIBS+=-lPsapi
 	INCLUDEPATH+=c:/source/sip/siplib
 	LIBS += -lpsapi -lMpr -lws2_32 -lgdi32
+	QMAKE_CXXFLAGS+=/Zi
+	QMAKE_LFLAGS+=/DEBUG /OPT:REF /OPT:ICF
 }
 
 

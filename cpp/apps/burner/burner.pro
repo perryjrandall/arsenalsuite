@@ -133,6 +133,8 @@ win32 {
 	message(Python Version is $$PY_VERSION Python lib path is $$PY_LIB_PATH)
 	LIBS+=-L$${PY_PATH}\\libs -lpython$${PY_VERSION}
 	LIBS += -lpsapi -lMpr -lws2_32 -lgdi32
+	QMAKE_CXXFLAGS+=/Zi
+	QMAKE_LFLAGS+=/DEBUG /OPT:REF /OPT:ICF
 }
 
 unix:!macx {

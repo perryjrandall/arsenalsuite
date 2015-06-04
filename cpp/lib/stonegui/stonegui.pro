@@ -117,6 +117,8 @@ win32 {
 	LIBS += -lPsapi -lMpr -ladvapi32 
 	LIBS+=-Lc:\\IntelLib
 	LIBS+=-L../stone -lstone
+	QMAKE_CXXFLAGS+=/Zi
+	QMAKE_LFLAGS+=/DEBUG /OPT:REF /OPT:ICF
 }
 
 unix {

@@ -21,6 +21,8 @@ win32 {
 	PY_VERSION=$$system("python -c \"from distutils.sysconfig import get_python_version; print get_python_version().replace('.','')\"")
 	message(Python Version is $$PY_VERSION Python lib path is $$PY_PATH\\libs)
 	LIBS+=-L$${PY_PATH}\\libs -lpython$${PY_VERSION}
+	QMAKE_CXXFLAGS+=/Zi
+	QMAKE_LFLAGS+=/DEBUG /OPT:REF /OPT:ICF
 }
 
 unix {
