@@ -139,6 +139,8 @@ void loadPythonPlugins()
 #endif
 	
 	Py_Initialize();
+	// Initialise python threads
+	PyEval_InitThreads();
 
 	const char * builtinModuleImportStr = 
 #ifdef Q_OS_WIN
@@ -146,12 +148,11 @@ void loadPythonPlugins()
 		"class MetaLoader(object):\n"
 		"\tdef __init__(self):\n"
 		"\t\tself.modules = {}\n"
-
 		"\t\tself.modules['blur.Stone'] = imp.load_module('blur.Stone',None,'',('','',imp.C_BUILTIN))\n"
 		"\t\tself.modules['blur.Classes'] = imp.load_module('blur.Classes',None,'',('','',imp.C_BUILTIN))\n"
 		"\t\tself.modules['blur.Stonegui'] = imp.load_module('blur.Stonegui',None,'',('','',imp.C_BUILTIN))\n"
 		"\t\tself.modules['blur.Classesui'] = imp.load_module('blur.Classesui',None,'',('','',imp.C_BUILTIN))\n"
-		"\t\tself.modules['blur.absubmit'] = imp.load_module('blur.absubmit',None,'',('','',imp.C_BUILTIN))\n"
+		//"\t\tself.modules['blur.absubmit'] = imp.load_module('blur.absubmit',None,'',('','',imp.C_BUILTIN))\n"
 		"\t\tself.modules['blur.Freezer'] = imp.load_module('blur.Freezer',None,'',('','',imp.C_BUILTIN))\n"
 		"\tdef find_module(self,fullname,path=None):\n"
 		"\t\tif fullname in self.modules:\n"
