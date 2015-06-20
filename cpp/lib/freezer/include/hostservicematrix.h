@@ -41,6 +41,8 @@ public:
 	void updateHosts( HostList hosts );
 	void refreshIndexes( QModelIndexList indexes );
 	
+	// We have to override this from RecordSuperModel and co as it sets the new model, but doesn't fix their combo boxes properly otherwise!
+	void setRootList(HostList hl);
 public slots:
 	void updateServices();
 

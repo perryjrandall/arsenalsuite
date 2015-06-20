@@ -364,6 +364,12 @@ void HostServiceModel::refreshIndexes( QModelIndexList indexes )
 	}
 }
 
+void HostServiceModel::setRootList(HostList hl)
+{
+	RecordSuperModel::setRootList(hl);
+	updateHosts(hl);
+}
+
 class HostServiceDelegate : public RecordDelegate
 {
 public:
